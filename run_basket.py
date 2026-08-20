@@ -23,6 +23,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import models as M  # noqa: E402
+from src import timing as T  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA, OUT = os.path.join(HERE, "data"), os.path.join(HERE, "out")
@@ -55,8 +56,9 @@ def main():
     aisle = {p["product_id"]: p["aisle"] for p in products}
     family = {p["product_id"]: p["family"] for p in products}
 
-    order_user = {int(o): int(u) for o, u, _ in orders}
-    order_seq = {int(o): int(s) for o, _, s in orders}
+    order_user = {int(r[0]): int(r[1]) for r in orders}
+    order_seq = {int(r[0]): int(r[2]) for r in orders}
+    order_day = {int(r[0]): float(r[3]) for r in orders}
     basket_of = defaultdict(list)
     reordered_of = defaultdict(list)
     for oid, pid, _pos, reo in op:
@@ -476,6 +478,261 @@ def main():
     emit("     the sensitivity band above would be a confidence interval.")
     summary["basket_save"] = S6.round(3).to_dict("index")
     summary["basket_save_assumption"] = ACCEPTANCE
+
+    # ==================================================================
+    emit("")
+    emit("=" * 78)
+    emit("7. REORDER TIMING -- WHERE THE MODELLING VALUE ACTUALLY IS")
+    emit("=" * 78)
+    emit("The spec's question: 'reorder prediction is easy -- the user buys milk")
+    emit("weekly. Where is the modelling value?' The first pass answered in prose")
+    emit("(timing, basket context, the discovery margin) and then built a model")
+    emit("with NO notion of time, so it could rank WHAT a user reorders and had")
+    emit("nothing to say about WHEN.")
+    emit("")
+    emit("That distinction is the product. An app that surfaces milk every single")
+    emit("session is not personalising, it is nagging, and the user learns to")
+    emit("ignore the slot. The value is surfacing it the day the carton runs out.")
+    emit("")
+    user_seq = {}
+    for u, oids in by_user.items():
+        hist = oids[:-1] if len(oids) >= 3 else oids
+        user_seq[u] = [(order_day[o], basket_of[o]) for o in hist]
+    tm = T.ReorderTiming(shrinkage_k=3.0).fit(user_seq)
+    emit("Fitted inter-purchase intervals: %d (user,item) pairs with at least one"
+         % len(tm.pair_mean))
+    emit("observed interval, %d items with a population interval, global mean"
+         % len(tm.item_mean))
+    emit("%.1f days." % tm.global_mean)
+    emit("")
+
+    def score_timing(basket, u, last_seen, today):
+        s = score_i2v(basket, u).copy()
+        base = s.copy()
+        for item, day in last_seen.items():
+            s[item] = base[item] + 3.0 * tm.due_score(u, item, today - day)
+        return s
+
+    methods2 = {"item2vec": lambda b, u, ls, t: score_i2v(b, u),
+                "item2vec + reorder": lambda b, u, ls, t: score_i2v_personal(b, u),
+                "item2vec + TIMING": score_timing}
+    rows = []
+    rng_t = np.random.default_rng(3)
+    for oid in test_orders:
+        b = basket_of[oid]
+        if len(b) < 3:
+            continue
+        u = order_user[oid]
+        today = order_day[oid]
+        last_seen = {}
+        for o in by_user[u][:-1]:
+            for i in basket_of[o]:
+                last_seen[i] = max(last_seen.get(i, -1e9), order_day[o])
+        hold_pos = int(rng_t.integers(len(b)))
+        held = b[hold_pos]
+        ctx = [x for j, x in enumerate(b) if j != hold_pos]
+        is_reorder = held in user_hist[u]
+        for mname, fn in methods2.items():
+            sc = np.asarray(fn(ctx, u, last_seen, today), float).copy()
+            sc[ctx] = -np.inf
+            top = np.argsort(-sc)[:K]
+            hit = int(held in top)
+            rank = int(np.where(top == held)[0][0]) + 1 if hit else 0
+            rows.append(dict(method=mname,
+                             segment="reorder" if is_reorder else "new_to_user",
+                             hit=hit, ndcg=(1.0 / np.log2(rank + 1)) if hit else 0.0))
+    TB = pd.DataFrame(rows)
+    tt = TB.pivot_table(index="method", columns="segment", values="hit",
+                        aggfunc="mean")
+    tt["ALL"] = TB.groupby("method").hit.mean()
+    order2 = ["item2vec", "item2vec + reorder", "item2vec + TIMING"]
+    emit("hit-rate@%d, held-out last order:" % K)
+    emit(tt.reindex(order2).to_string(float_format=lambda x: "%9.4f" % x))
+    emit("")
+    d = tt.loc["item2vec + TIMING"] - tt.loc["item2vec + reorder"]
+    emit("Timing vs a plain reorder prior: %+.4f on reorders, %+.4f on new-to-user."
+         % (d["reorder"], d["new_to_user"]))
+    emit("")
+    emit("THE AGGREGATE IS UP AND THE PRODUCT IS WORSE. That is the finding.")
+    emit("")
+    emit("Timing is a very strong signal on the easy half, and at this weight it")
+    emit("is strong enough to crowd new items out of the top-%d entirely: %+.4f on"
+         % (K, d["new_to_user"]))
+    emit("new-to-user is not a rounding error, it is most of the discovery slot")
+    emit("disappearing. The model has become a SHOPPING LIST -- extremely good at")
+    emit("telling you that you are nearly out of milk, and useless at telling you")
+    emit("anything you did not already know.")
+    emit("")
+    emit("That is exactly the failure this section opened by describing, arrived at")
+    emit("from the other direction. Nagging is not caused by surfacing reorders too")
+    emit("often; it is caused by surfacing them INSTEAD of everything else.")
+    emit("")
+    emit("The weight on the due score is the dial between the two, and it is worth")
+    emit("seeing rather than asserting:")
+    emit("")
+    sweep = []
+    for wt in (0.0, 0.5, 1.0, 3.0, 8.0):
+        def sc_fn(basket, u, last_seen, today, _w=wt):
+            base = score_i2v(basket, u).copy()
+            out = base.copy()
+            for item, day in last_seen.items():
+                out[item] = base[item] + _w * tm.due_score(u, item, today - day)
+            return out
+        hits = {"reorder": [], "new_to_user": []}
+        rng_w = np.random.default_rng(3)
+        for oid in test_orders:
+            b = basket_of[oid]
+            if len(b) < 3:
+                continue
+            u = order_user[oid]
+            today = order_day[oid]
+            last_seen = {}
+            for o in by_user[u][:-1]:
+                for i in basket_of[o]:
+                    last_seen[i] = max(last_seen.get(i, -1e9), order_day[o])
+            hold_pos = int(rng_w.integers(len(b)))
+            held = b[hold_pos]
+            ctx = [x for j, x in enumerate(b) if j != hold_pos]
+            seg = "reorder" if held in user_hist[u] else "new_to_user"
+            sc = np.asarray(sc_fn(ctx, u, last_seen, today), float).copy()
+            sc[ctx] = -np.inf
+            hits[seg].append(int(held in np.argsort(-sc)[:K]))
+        sweep.append(dict(due_weight=wt,
+                          reorder=float(np.mean(hits["reorder"])),
+                          new_to_user=float(np.mean(hits["new_to_user"])),
+                          ALL=float(np.mean(hits["reorder"] + hits["new_to_user"]))))
+    SW = pd.DataFrame(sweep).set_index("due_weight")
+    emit(SW.to_string(float_format=lambda x: "%11.4f" % x))
+    emit("")
+    best_all = SW.ALL.idxmax()
+    best_new = SW.new_to_user.idxmax()
+    emit("Best aggregate hit-rate at weight %.1f; best new-to-user at weight %.1f."
+         % (best_all, best_new))
+    emit("")
+    emit("Tuning this on the aggregate picks %.1f and quietly sells the discovery"
+         % best_all)
+    emit("slot to the reorder slot. Whether that is the right trade is a PRODUCT")
+    emit("decision -- reorder hits convert better per impression, discovery hits")
+    emit("grow basket breadth -- and it is not a decision an offline hit-rate can")
+    emit("make. What the model owes the product manager is this table, not a")
+    emit("single tuned number.")
+    summary["timing_weight_sweep"] = SW.round(4).to_dict("index")
+    summary["timing"] = tt.reindex(order2).round(4).to_dict("index")
+
+    # ==================================================================
+    emit("")
+    emit("=" * 78)
+    emit("8. COMPLEMENTS ARE DIRECTIONAL")
+    emit("=" * 78)
+    emit("The first pass symmetrised the complement score and said so in a")
+    emit("comment. That is wrong in a way that matters commercially: P(buns | hot")
+    emit("dogs) is high because buns are what you need once you have hot dogs,")
+    emit("while P(hot dogs | buns) is lower because buns go with other things.")
+    emit("")
+    DL = T.directional_lift(train_baskets, n_items)
+    pairs = []
+    for a, b in comp_pairs:
+        pairs.append((a, b, DL[a, b], DL[b, a], T.asymmetry(DL, a, b)))
+    PD = pd.DataFrame(pairs, columns=["a", "b", "P(b|a)", "P(a|b)", "asymmetry"])
+    PD["abs_asym"] = PD.asymmetry.abs()
+    top = PD.sort_values("abs_asym", ascending=False).head(8)
+    emit("The most asymmetric complement pairs:")
+    emit("%-18s %-18s %9s %9s %11s"
+         % ("item a", "item b", "P(b|a)", "P(a|b)", "asymmetry"))
+    for _i, r in top.iterrows():
+        emit("%-18s %-18s %9.4f %9.4f %+11.4f"
+             % (name[int(r["a"])], name[int(r["b"])], r["P(b|a)"], r["P(a|b)"],
+                r["asymmetry"]))
+    emit("")
+    emit("Mean |asymmetry| across all %d true complement pairs: %.4f"
+         % (len(comp_pairs), PD.abs_asym.mean()))
+    emit("Share of pairs where the direction matters by more than 0.05: %.1f%%"
+         % (100 * (PD.abs_asym > 0.05).mean()))
+    emit("")
+    emit("A cart-completion widget should suggest b to an a-buyer far more")
+    emit("readily than the reverse when that column is large, and a symmetric")
+    emit("score cannot express the difference. The direction is free -- it is")
+    emit("the same co-occurrence counts divided by a different denominator --")
+    emit("and throwing it away was a modelling choice, not a limitation.")
+    summary["directionality"] = dict(
+        mean_abs_asymmetry=float(PD.abs_asym.mean()),
+        share_material=float((PD.abs_asym > 0.05).mean()))
+
+    # ==================================================================
+    emit("")
+    emit("=" * 78)
+    emit("9. PRICE- AND PACK-AWARE SUBSTITUTION, AND COLD START")
+    emit("=" * 78)
+    emit("The first pass ranked substitutes on embedding similarity alone, which")
+    emit("is the first two things a real shopper checks away from being useful.")
+    emit("")
+    prices = np.array([p["price"] for p in sorted(products, key=lambda x: x["product_id"])])
+    packs = np.array([p["pack_size"] for p in sorted(products, key=lambda x: x["product_id"])])
+    item_meta = {p["product_id"]: p for p in products}
+
+    rows = []
+    for a, b in sub_pairs:
+        rows.append(dict(pair="%s -> %s" % (name[a], name[b]),
+                         price_ratio=prices[b] / max(prices[a], 1e-9),
+                         pack_ratio=packs[b] / max(packs[a], 1e-9),
+                         sim=sub_S[a, b]))
+    SP = pd.DataFrame(rows)
+    emit("True substitute pairs vary in price by a factor of %.2f to %.2f and in"
+         % (SP.price_ratio.min(), SP.price_ratio.max()))
+    emit("pack size by %.2f to %.2f. A model that ignores both calls all of them"
+         % (SP.pack_ratio.min(), SP.pack_ratio.max()))
+    emit("equally good swaps.")
+    emit("")
+    cands = np.arange(n_items)
+    changed = 0
+    examples = []
+    for probe_item in [p["product_id"] for p in products
+                       if p["name"] in ("cola_a", "pasta_sauce_a", "chips_a")]:
+        plain = np.argsort(-np.where(np.isfinite(sub_S[probe_item]),
+                                     sub_S[probe_item], -9e9))[:3]
+        adj = T.substitution_score(np.where(np.isfinite(sub_S), sub_S, -9e9),
+                                   prices, packs, probe_item, cands)
+        adj[probe_item] = -9e9
+        adj_top = np.argsort(-adj)[:3]
+        if list(plain) != list(adj_top):
+            changed += 1
+        examples.append((probe_item, plain, adj_top))
+    for probe_item, plain, adj_top in examples:
+        emit("  %s ($%.2f, pack %.0f):" % (name[probe_item], prices[probe_item],
+                                           packs[probe_item]))
+        emit("    similarity only  -> %s"
+             % ", ".join("%s ($%.2f/pk%.0f)" % (name[i], prices[i], packs[i])
+                         for i in plain))
+        emit("    + price and pack -> %s"
+             % ", ".join("%s ($%.2f/pk%.0f)" % (name[i], prices[i], packs[i])
+                         for i in adj_top))
+    emit("")
+    emit("The penalties are MULTIPLICATIVE AND BOUNDED, so a close price match can")
+    emit("never outrank a genuinely dissimilar item -- it can only reorder items")
+    emit("that were already close. That ordering is the point: price should break")
+    emit("ties among substitutes, not create substitutes. An additive price term")
+    emit("would happily rank a cheap unrelated item above an expensive real one.")
+    emit("")
+    emit("COLD START. A new SKU has no co-occurrence and no useful vector, so the")
+    emit("distributional method has nothing to say -- which is the honest position")
+    emit("and the reason a content fallback exists.")
+    cold = T.cold_start_substitutes(item_meta, probe_item,
+                                    list(range(n_items)), prices, packs)
+    emit("  fallback for %s: %s"
+         % (name[probe_item], ", ".join(name[i] for i in cold)))
+    hit = sum(1 for i in cold if (min(probe_item, i), max(probe_item, i))
+              in set(sub_pairs))
+    emit("  of which TRUE substitutes: %d of %d" % (hit, len(cold)))
+    emit("")
+    emit("Same family first, then same aisle, ranked by price and pack proximity.")
+    emit("It is strictly worse than the learned answer and it is what you serve on")
+    emit("day one of a SKU's life. Every recommender needs this path and most")
+    emit("portfolio projects skip it, because an offline eval never contains an")
+    emit("item the model has not seen.")
+    summary["price_pack"] = dict(
+        price_ratio_range=[float(SP.price_ratio.min()), float(SP.price_ratio.max())],
+        probes_reordered=changed,
+        cold_start_precision=hit / max(len(cold), 1))
 
     emit("")
     emit("(%.0fs)" % (time.time() - t0))

@@ -1,13 +1,15 @@
 # ML-3 — Basket Completion & Substitution Engine
 
-**This is not deployable.** It is the first ~20% of the spec: complements and
-substitutes treated as *opposite* relations, with the conflation measured rather
-than described. No API, no cart UI. Missing 80% at the bottom.
+**Roughly 50% of the spec.** Complements and substitutes treated as *opposite*
+relations with the conflation measured - plus the four things the first pass
+named as missing: reorder **timing** (the spec's own grill question), directional
+complements, price- and pack-aware substitution, and a cold-start path. No API,
+no cart UI; what remains is named at the bottom.
 
 ```bash
-python src/generate.py      # ~15s  Instacart-shaped orders with planted truth
-python run_basket.py        # ~4min
-python -m pytest tests -q   # 12 tests, ~50s
+python src/generate.py      # ~20s  Instacart-shaped orders, now with order DAYS
+python run_basket.py        # ~6min
+python -m pytest tests -q   # 29 tests, ~75s
 ```
 
 ## The data
@@ -161,20 +163,106 @@ removed" ignores abandonment and retention, so these are an **upper** bound on
 saving and a **lower** bound on harm); and it's directly measurable from
 in-app accept/reject logs, which this project doesn't have.
 
-## The other 80% — what is NOT here
+## Second pass: four gaps the first pass named
+
+### Reorder timing - and the aggregate that lies
+
+The spec asks: *"reorder prediction is easy - the user buys milk weekly. Where's
+the modelling value?"* The first pass answered in prose (timing, basket context,
+the discovery margin) and then built a model with **no notion of time**, so it
+could rank *what* a user reorders and had nothing to say about *when*.
+
+The generator now emits order **days** (per-user cadence, 4-16 day mean), and a
+hazard model fits per-(user, item) inter-purchase intervals shrunk toward the
+item population - 53,717 pairs with at least one observed interval.
+
+| method | new-to-user | reorder | ALL |
+|---|---|---|---|
+| item2vec | 0.5931 | 0.6560 | 0.6493 |
+| item2vec + reorder prior | 0.5836 | 0.6873 | 0.6763 |
+| **item2vec + TIMING** | **0.3312** | **0.7387** | 0.6957 |
+
+**The aggregate is up and the product is worse.** Timing gains +0.051 on reorders
+and loses **-0.252** on new-to-user - most of the discovery slot disappearing.
+The model has become a **shopping list**: excellent at telling you you're nearly
+out of milk, useless at telling you anything you didn't already know.
+
+That is the failure this section opens by describing, arrived at from the other
+direction. Nagging isn't caused by surfacing reorders too often; it's caused by
+surfacing them *instead of everything else*.
+
+The weight on the due score is the dial, and it's shown rather than asserted:
+
+| due weight | reorder | new-to-user | ALL |
+|---|---|---|---|
+| 0.0 | 0.6560 | **0.5931** | 0.6493 |
+| 1.0 | 0.7268 | 0.5205 | **0.7050** |
+| 3.0 | 0.7387 | 0.3312 | 0.6957 |
+| 8.0 | 0.6791 | 0.1483 | 0.6230 |
+
+Tuning on the aggregate picks 1.0 and quietly sells the discovery slot to the
+reorder slot. Whether that's the right trade is a **product** decision - reorder
+hits convert better per impression, discovery hits grow basket breadth - and it
+is not a decision an offline hit-rate can make. What the model owes a PM is this
+table, not a single tuned number.
+
+**Why the due score isn't monotone in recency**, which is the part worth arguing
+about: it *peaks* at the expected interval and decays either side. Buying milk two
+days after the last carton is unlikely; buying it twenty days after is *also*
+unlikely, because the user probably bought it elsewhere. A "more time elapsed =
+more likely" recency feature gets that second case exactly backwards - and it's
+the feature most reorder models actually use. A test asserts the non-monotonicity.
+
+### Complements are directional
+
+The first pass symmetrised the complement score and said so in a comment. That's
+wrong in a way that matters commercially: `P(buns | hot dogs)` is high because
+buns are what you need once you have hot dogs, while `P(hot dogs | buns)` is
+lower because buns go with other things.
+
+`directional_lift` computes `P(b | a)` properly. The direction is **free** - the
+same co-occurrence counts divided by a different denominator - so throwing it
+away was a modelling choice, not a limitation. A cart-completion widget should
+suggest b to an a-buyer far more readily than the reverse when the asymmetry is
+large, and a symmetric score cannot express that.
+
+### Price- and pack-aware substitution
+
+Ranking substitutes on embedding similarity alone is the first two things a real
+shopper checks away from being useful: a shopper whose $3 pasta sauce is out does
+not want the $11 one, and someone who wanted a 500g bag does not want the 2kg
+sack. Both are "the same product" to a distributional model.
+
+Penalties are **multiplicative and bounded**, so a close price match can never
+*outrank* a genuinely dissimilar item - it can only reorder items that were
+already close. **Price should break ties among substitutes, not create
+substitutes**, and a test asserts an additive term's failure mode doesn't occur.
+
+### Cold start
+
+A new SKU has no co-occurrence and no useful vector, so the distributional method
+has nothing to say - which is the honest position and the reason a content
+fallback exists: same family first, then same aisle, ranked by price and pack
+proximity. It is strictly worse than the learned answer and it's what you serve
+on day one of a SKU's life. Every recommender needs this path and most portfolio
+projects skip it, because an offline eval never contains an item the model hasn't
+seen.
+
+## The other ~50% - what is still NOT here
 
 - **No API and no cart UI.** The endpoints are Python functions; the spec asks
   for a demo cart that exercises both.
-- **No sequential/basket-aware model.** item2vec ignores within-basket order and
-  inter-purchase timing entirely; the spec's "where's the modelling value in
-  reorder prediction" answer is *timing*, and timing is not modelled.
-- **49 products.** Enough to demonstrate the mechanism, far too few to say
-  anything about catalogue-scale retrieval, cold start, or ANN indexing.
-- **No cold start.** Every product has training data.
-- **No directionality.** `complement_score` is symmetrised; in reality "buns
-  given hot dogs" and "hot dogs given buns" are different propensities.
-- **Substitution ignores price and pack size**, which are the first two things a
-  real shopper checks.
-- **The switch matrix is computed and barely used** — it contributes one
+- **No sequential model.** item2vec still ignores within-basket order; timing is
+  now modelled but as a per-item hazard, not a sequence.
+- **49 products.** Enough to demonstrate the mechanisms, far too few to say
+  anything about catalogue-scale retrieval or ANN indexing.
+- **Directionality is computed but not wired into `/complete`** - the endpoint
+  still uses the symmetrised score, so the asymmetry is measured and not yet
+  served.
+- **The due-score weight is not fitted per user or per category.** Milk and
+  laundry detergent have very different cadences and the dial is global.
+- **The switch matrix is computed and barely used** - it contributes one
   z-scored term to the combined scorer and is never validated on its own.
+- **Cold start is content-only** - no vendor metadata, no image or text
+  embedding, no borrowing a vector from the family centroid.
 - **No A/B or interleaving story** for any of it.

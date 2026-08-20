@@ -1,18 +1,18 @@
-37725 orders, 49 products, 3000 users. Train baskets 34725, held-out orders 3000.
+37345 orders, 49 products, 3000 users. Train baskets 34345, held-out orders 3000.
 Split is TEMPORAL (each user's last order held out). A random basket
 split would let a user's future train the model that predicts their
 past, which on 72% reorder data is a very effective way to cheat.
-item2vec trained in 236s
+item2vec trained in 294s
 
 ==============================================================================
 1. BASKET COMPLETION -- LEAVE-ONE-OUT, SEGMENTED
 ==============================================================================
                     hit_new_to_user  hit_reorder  ndcg_new_to_user  ndcg_reorder  hit_ALL  ndcg_ALL
 method                                                                                             
-popularity                   0.2997       0.3695            0.1569        0.2170   0.3617    0.2103
-cooccurrence_lift            0.5549       0.6249            0.3422        0.4198   0.6170    0.4111
-item2vec                     0.5786       0.6587            0.3698        0.4327   0.6497    0.4256
-item2vec + reorder           0.5697       0.6838            0.3494        0.4683   0.6710    0.4550
+popularity                   0.3205       0.3905            0.1659        0.2276   0.3827    0.2207
+cooccurrence_lift            0.5341       0.6162            0.3474        0.4169   0.6070    0.4091
+item2vec                     0.5816       0.6463            0.3624        0.4109   0.6390    0.4055
+item2vec + reorder           0.5608       0.6748            0.3408        0.4434   0.6620    0.4319
 
 Held-out items: 2663 reorder, 337 new-to-user.
 
@@ -34,9 +34,9 @@ than celebrate the aggregate it inflates.
 ==============================================================================
                     n  mean_cooccurrence    mean_lift  mean_i2v_complement  mean_i2v_similarity
 relation                                                                                       
-TRUE complements  180          1439.7389       1.6783               0.6897              -0.1876
-TRUE substitutes   26             0.0000       0.0000              -2.3469               0.9176
-unrelated         300           690.6567       0.8771               0.0356               0.0354
+TRUE complements  180          1432.9056       1.6819               0.7191              -0.1586
+TRUE substitutes   26             0.0000       0.0000              -2.3138               0.9099
+unrelated         300           681.7267       0.8775               0.0654               0.0502
 
 READ THE FIRST TWO COLUMNS AGAINST THE LAST ONE.
 
@@ -79,6 +79,16 @@ a second annotator could reproduce it:
               interchangeable (ketchup and mustard are complements of
               hot dogs and of each other, not substitutes for each other).
 
+WHY THE AUC IS 1.0000, AND WHY YOU SHOULD DISCOUNT IT. The generator
+enforces ONE PRODUCT PER FAMILY PER BASKET as a hard constraint, so
+substitutes co-occur exactly zero times and the separation is perfect by
+construction. Real grocery data is much softer: households stock up on
+two brands, buy different sizes of the same thing, or contain people with
+different preferences, so genuine substitutes DO share baskets sometimes.
+The right way to read this section is that the SIGNAL is the correct one
+and the effect size is an artifact of the lab. On real data I would
+expect the ranking of scorers to survive and the AUC to be well below 1.
+
 HONESTY ABOUT THIS LABEL SET: in this project the labels come from the
 generator's planted structure rather than from human annotators, so they
 are ground truth for the SIMULATION and not evidence about real shoppers.
@@ -94,22 +104,22 @@ Watch what the naive method offers as a REPLACEMENT.
 
   cola_a (soft_drinks):
     co-occurrence lift  -> lemon_lime_b, salsa_a, salsa_b, lemon_lime_a, chips_b
-    i2v similarity      -> cola_c, cola_b, mustard_a, coffee_b, flour_a
+    i2v similarity      -> cola_b, cola_c, flour_a, ketchup_a, ground_beef_b
     TRUE substitutes    -> cola_b, cola_c
 
   hot_dogs_a (meat):
-    co-occurrence lift  -> ketchup_a, mustard_a, ketchup_b, hotdog_buns_a, hotdog_buns_b
-    i2v similarity      -> hot_dogs_b, spaghetti_a, sandwich_bread_b, eggs_a, lemon_lime_a
+    co-occurrence lift  -> mustard_b, hotdog_buns_a, ketchup_b, hotdog_buns_b, ketchup_a
+    i2v similarity      -> hot_dogs_b, lemon_lime_b, flour_a, coffee_a, salsa_b
     TRUE substitutes    -> hot_dogs_b
 
   milk_whole_a (dairy):
-    co-occurrence lift  -> coffee_a, cereal_a, coffee_b, cereal_b, eggs_a
-    i2v similarity      -> milk_whole_b, butter_a, ketchup_a, ketchup_b, butter_b
+    co-occurrence lift  -> coffee_b, cereal_b, cereal_a, coffee_a, eggs_a
+    i2v similarity      -> milk_whole_b, sugar_a, hotdog_buns_a, lemon_lime_b, mayo_b
     TRUE substitutes    -> milk_whole_b
 
   spaghetti_a (pasta):
-    co-occurrence lift  -> ground_beef_a, pasta_sauce_a, ground_beef_b, pasta_sauce_b, cheese_slices_b
-    i2v similarity      -> spaghetti_b, hot_dogs_a, chicken_breast_a, eggs_a, coffee_b
+    co-occurrence lift  -> ground_beef_a, ground_beef_b, pasta_sauce_a, pasta_sauce_b, cheese_slices_b
+    i2v similarity      -> spaghetti_b, cereal_b, lettuce_b, butter_a, salsa_b
     TRUE substitutes    -> spaghetti_b
 
 Across all 26 true substitute pairs, co-occurrence lift fails to place
@@ -128,8 +138,8 @@ mode structurally impossible rather than merely unlikely.
 ==============================================================================
 5. SERVING LATENCY -- THE SHOPPER IS AT THE SHELF
 ==============================================================================
-  /complete     p50   0.163 ms   p95   0.267 ms   p99   0.579 ms
-  /substitute   p50   0.038 ms   p95   0.049 ms   p99   0.091 ms
+  /complete     p50   0.166 ms   p95   0.389 ms   p99   1.570 ms
+  /substitute   p50   0.040 ms   p95   0.082 ms   p99   0.144 ms
 
 /substitute is the one with a human waiting: a shopper is standing at the
 shelf, the item is gone, and the app has to answer NOW. So the ranked
@@ -145,15 +155,15 @@ a worse answer and not a blank screen.
 ==============================================================================
 6. BASKET-SAVE SIMULATION
 ==============================================================================
-Held-out GMV $147416, 1386 out-of-stock events at a 6% OOS rate.
-Revenue lost with NO substitution offered: $9150
+Held-out GMV $146008, 1378 out-of-stock events at a 6% OOS rate.
+Revenue lost with NO substitution offered: $8851
 
             revenue_lost  vs_no_substitution        saved   pct_of_gmv
 acceptance                                                            
-0.40             5353.00                0.59      3797.00         2.58
-0.55             3947.00                0.43      5203.00         3.53
-0.70             2704.00                0.30      6446.00         4.37
-0.85             1429.00                0.16      7721.00         5.24
+0.40             5207.00                0.59      3644.00         2.50
+0.55             3877.00                0.44      4974.00         3.41
+0.70             2652.00                0.30      6199.00         4.25
+0.85             1436.00                0.16      7415.00         5.08
 
 ATTACKING MY OWN 70% ASSUMPTION, since it is the number the whole table
 hangs on and I made it up:
@@ -179,4 +189,129 @@ hangs on and I made it up:
      such log; on real data it would be a fitted rate per category, and
      the sensitivity band above would be a confidence interval.
 
-(241s)
+==============================================================================
+7. REORDER TIMING -- WHERE THE MODELLING VALUE ACTUALLY IS
+==============================================================================
+The spec's question: 'reorder prediction is easy -- the user buys milk
+weekly. Where is the modelling value?' The first pass answered in prose
+(timing, basket context, the discovery margin) and then built a model
+with NO notion of time, so it could rank WHAT a user reorders and had
+nothing to say about WHEN.
+
+That distinction is the product. An app that surfaces milk every single
+session is not personalising, it is nagging, and the user learns to
+ignore the slot. The value is surfacing it the day the carton runs out.
+
+Fitted inter-purchase intervals: 53717 (user,item) pairs with at least one
+observed interval, 49 items with a population interval, global mean
+23.2 days.
+
+hit-rate@10, held-out last order:
+segment             new_to_user   reorder       ALL
+method                                             
+item2vec                 0.5931    0.6560    0.6493
+item2vec + reorder       0.5836    0.6873    0.6763
+item2vec + TIMING        0.3312    0.7387    0.6957
+
+Timing vs a plain reorder prior: +0.0514 on reorders, -0.2524 on new-to-user.
+
+THE AGGREGATE IS UP AND THE PRODUCT IS WORSE. That is the finding.
+
+Timing is a very strong signal on the easy half, and at this weight it
+is strong enough to crowd new items out of the top-10 entirely: -0.2524 on
+new-to-user is not a rounding error, it is most of the discovery slot
+disappearing. The model has become a SHOPPING LIST -- extremely good at
+telling you that you are nearly out of milk, and useless at telling you
+anything you did not already know.
+
+That is exactly the failure this section opened by describing, arrived at
+from the other direction. Nagging is not caused by surfacing reorders too
+often; it is caused by surfacing them INSTEAD of everything else.
+
+The weight on the due score is the dial between the two, and it is worth
+seeing rather than asserting:
+
+               reorder  new_to_user         ALL
+due_weight                                     
+0.0             0.6560       0.5931      0.6493
+0.5             0.7007       0.5521      0.6850
+1.0             0.7268       0.5205      0.7050
+3.0             0.7387       0.3312      0.6957
+8.0             0.6791       0.1483      0.6230
+
+Best aggregate hit-rate at weight 1.0; best new-to-user at weight 0.0.
+
+Tuning this on the aggregate picks 1.0 and quietly sells the discovery
+slot to the reorder slot. Whether that is the right trade is a PRODUCT
+decision -- reorder hits convert better per impression, discovery hits
+grow basket breadth -- and it is not a decision an offline hit-rate can
+make. What the model owes the product manager is this table, not a
+single tuned number.
+
+==============================================================================
+8. COMPLEMENTS ARE DIRECTIONAL
+==============================================================================
+The first pass symmetrised the complement score and said so in a
+comment. That is wrong in a way that matters commercially: P(buns | hot
+dogs) is high because buns are what you need once you have hot dogs,
+while P(hot dogs | buns) is lower because buns go with other things.
+
+The most asymmetric complement pairs:
+item a             item b                P(b|a)    P(a|b)   asymmetry
+coffee_b           eggs_a                0.6003    0.2111     +0.3892
+milk_whole_a       eggs_a                0.6011    0.2225     +0.3787
+cereal_a           eggs_a                0.5849    0.2152     +0.3697
+cereal_b           eggs_a                0.5723    0.2101     +0.3622
+coffee_a           eggs_a                0.5785    0.2164     +0.3621
+butter_b           eggs_a                0.5719    0.2102     +0.3617
+milk_whole_b       eggs_a                0.5648    0.2053     +0.3595
+butter_a           eggs_a                0.5617    0.2046     +0.3571
+
+Mean |asymmetry| across all 180 true complement pairs: 0.0742
+Share of pairs where the direction matters by more than 0.05: 45.0%
+
+A cart-completion widget should suggest b to an a-buyer far more
+readily than the reverse when that column is large, and a symmetric
+score cannot express the difference. The direction is free -- it is
+the same co-occurrence counts divided by a different denominator --
+and throwing it away was a modelling choice, not a limitation.
+
+==============================================================================
+9. PRICE- AND PACK-AWARE SUBSTITUTION, AND COLD START
+==============================================================================
+The first pass ranked substitutes on embedding similarity alone, which
+is the first two things a real shopper checks away from being useful.
+
+True substitute pairs vary in price by a factor of 0.24 to 2.80 and in
+pack size by 0.08 to 12.00. A model that ignores both calls all of them
+equally good swaps.
+
+  cola_a ($10.77, pack 1):
+    similarity only  -> cola_b ($9.31/pk12), cola_c ($3.95/pk1), flour_a ($7.14/pk1)
+    + price and pack -> ground_beef_b ($8.87/pk1), flour_a ($7.14/pk1), sandwich_bread_a ($8.43/pk1)
+  pasta_sauce_a ($16.17, pack 4):
+    similarity only  -> pasta_sauce_b ($7.53/pk4), lettuce_a ($7.41/pk1), sandwich_bread_c ($4.64/pk4)
+    + price and pack -> pasta_sauce_b ($7.53/pk4), lettuce_b ($14.10/pk4), mustard_a ($15.50/pk6)
+  chips_a ($4.91, pack 12):
+    similarity only  -> chips_c ($13.77/pk1), chips_b ($11.38/pk12), eggs_a ($6.83/pk2)
+    + price and pack -> chips_b ($11.38/pk12), cereal_b ($8.46/pk12), butter_b ($2.69/pk12)
+
+The penalties are MULTIPLICATIVE AND BOUNDED, so a close price match can
+never outrank a genuinely dissimilar item -- it can only reorder items
+that were already close. That ordering is the point: price should break
+ties among substitutes, not create substitutes. An additive price term
+would happily rank a cheap unrelated item above an expensive real one.
+
+COLD START. A new SKU has no co-occurrence and no useful vector, so the
+distributional method has nothing to say -- which is the honest position
+and the reason a content fallback exists.
+  fallback for chips_a: chips_b, chips_c, salsa_a, salsa_b
+  of which TRUE substitutes: 2 of 4
+
+Same family first, then same aisle, ranked by price and pack proximity.
+It is strictly worse than the learned answer and it is what you serve on
+day one of a SKU's life. Every recommender needs this path and most
+portfolio projects skip it, because an offline eval never contains an
+item the model has not seen.
+
+(315s)

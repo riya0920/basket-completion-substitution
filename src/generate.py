@@ -74,8 +74,15 @@ def build_catalogue():
             fam_name = fam[0].rsplit("_", 1)[0]
             families[fam_name] = []
             for name in fam:
+                # price and pack size are needed to rank substitutes the way a
+                # shopper does -- a $3 sauce is not substitutable by an $11 one,
+                # and a 500g bag is not swapped for a 2kg sack. Within a family
+                # they VARY, which is what makes the penalty do work.
+                base_price = float(RNG.uniform(1.5, 12.0))
                 products.append(dict(product_id=pid, name=name, aisle=aisle,
-                                     family=fam_name))
+                                     family=fam_name,
+                                     price=round(base_price * float(RNG.uniform(0.75, 1.4)), 2),
+                                     pack_size=float(RNG.choice([1, 1, 1, 2, 4, 6, 12]))))
                 families[fam_name].append(pid)
                 family_of[pid] = fam_name
                 aisle_of[pid] = aisle
@@ -108,9 +115,16 @@ def build(out_dir: str) -> dict:
     oid = 0
     user_prev_items = defaultdict(set)
 
+    # Each user shops on their own cadence -- weekly, fortnightly, erratic. The
+    # first pass had order_number only, so the models could rank WHAT a user
+    # reorders and had nothing to say about WHEN, which is where the value is.
+    user_cadence = {u: float(RNG.uniform(4.0, 16.0)) for u in range(N_USERS)}
+
     for u in range(N_USERS):
         n_orders = int(RNG.integers(*ORDERS_PER_USER))
+        day = float(RNG.uniform(0, 30))
         for seq in range(n_orders):
+            day += max(1.0, float(RNG.gamma(4.0, user_cadence[u] / 4.0)))
             theme = theme_names[int(RNG.choice(len(theme_names), p=theme_pref[u]))]
             target = int(RNG.integers(*BASKET_SIZE))
             fams_wanted = []
@@ -142,7 +156,7 @@ def build(out_dir: str) -> dict:
             basket = list(dict.fromkeys(basket))
             prev = user_prev_items[u]
             orders.append(dict(order_id=oid, user_id=u, order_number=seq,
-                               n_items=len(basket)))
+                               day=day, n_items=len(basket)))
             for pos, item in enumerate(basket):
                 order_products.append(dict(order_id=oid, product_id=item,
                                            add_to_cart_order=pos + 1,
@@ -171,8 +185,8 @@ def build(out_dir: str) -> dict:
         complements=[list(p) for p in sorted(true_complements)])
 
     np.save(os.path.join(out_dir, "orders.npy"),
-            np.array([(o["order_id"], o["user_id"], o["order_number"])
-                      for o in orders], dtype=np.int32))
+            np.array([(o["order_id"], o["user_id"], o["order_number"], o["day"])
+                      for o in orders], dtype=np.float64))
     np.save(os.path.join(out_dir, "order_products.npy"),
             np.array([(r["order_id"], r["product_id"], r["add_to_cart_order"],
                        r["reordered"]) for r in order_products], dtype=np.int32))
@@ -187,7 +201,10 @@ def build(out_dir: str) -> dict:
                  mean_basket=round(len(order_products) / len(orders), 2),
                  reorder_rate=round(reorder_rate, 4),
                  n_true_substitute_pairs=len(true_substitutes),
-                 n_true_complement_pairs=len(true_complements))
+                 n_true_complement_pairs=len(true_complements),
+                 mean_days_between_orders=round(float(np.mean(
+                     [user_cadence[u] for u in range(N_USERS)])), 2),
+                 span_days=round(float(max(o["day"] for o in orders)), 1))
     with open(os.path.join(out_dir, "stats.json"), "w") as f:
         json.dump(stats, f, indent=2)
     return stats
