@@ -1,0 +1,123 @@
+{
+  "basket_completion": {
+    "hit_new_to_user": {
+      "cooccurrence_lift": 0.5549,
+      "item2vec": 0.5786,
+      "item2vec + reorder": 0.5697,
+      "popularity": 0.2997
+    },
+    "hit_reorder": {
+      "cooccurrence_lift": 0.6249,
+      "item2vec": 0.6587,
+      "item2vec + reorder": 0.6838,
+      "popularity": 0.3695
+    },
+    "ndcg_new_to_user": {
+      "cooccurrence_lift": 0.3422,
+      "item2vec": 0.3698,
+      "item2vec + reorder": 0.3494,
+      "popularity": 0.1569
+    },
+    "ndcg_reorder": {
+      "cooccurrence_lift": 0.4198,
+      "item2vec": 0.4327,
+      "item2vec + reorder": 0.4683,
+      "popularity": 0.217
+    },
+    "hit_ALL": {
+      "cooccurrence_lift": 0.617,
+      "item2vec": 0.6497,
+      "item2vec + reorder": 0.671,
+      "popularity": 0.3617
+    },
+    "ndcg_ALL": {
+      "cooccurrence_lift": 0.4111,
+      "item2vec": 0.4256,
+      "item2vec + reorder": 0.455,
+      "popularity": 0.2103
+    }
+  },
+  "conflation": {
+    "TRUE complements": {
+      "n": 180,
+      "mean_cooccurrence": 1439.7389,
+      "mean_lift": 1.6783,
+      "mean_i2v_complement": 0.6897,
+      "mean_i2v_similarity": -0.1876
+    },
+    "TRUE substitutes": {
+      "n": 26,
+      "mean_cooccurrence": 0.0,
+      "mean_lift": 0.0,
+      "mean_i2v_complement": -2.3469,
+      "mean_i2v_similarity": 0.9176
+    },
+    "unrelated": {
+      "n": 300,
+      "mean_cooccurrence": 690.6567,
+      "mean_lift": 0.8771,
+      "mean_i2v_complement": 0.0356,
+      "mean_i2v_similarity": 0.0354
+    }
+  },
+  "substitution_scoring": {
+    "cooccurrence lift (naive)": {
+      "precision_at_n": 0.0,
+      "auc": 0.0
+    },
+    "i2v similarity": {
+      "precision_at_n": 1.0,
+      "auc": 1.0
+    },
+    "same aisle only": {
+      "precision_at_n": 0.4231,
+      "auc": 0.9022
+    },
+    "COMBINED (sim + aisle - cooccur)": {
+      "precision_at_n": 1.0,
+      "auc": 1.0
+    }
+  },
+  "conflation_topk": {
+    "lift_misses": 26,
+    "n_sub_pairs": 26,
+    "i2v_hits": 26
+  },
+  "latency": {
+    "/complete": {
+      "p50": 0.163,
+      "p95": 0.267
+    },
+    "/substitute": {
+      "p50": 0.038,
+      "p95": 0.049
+    }
+  },
+  "basket_save": {
+    "0.4": {
+      "revenue_lost": 5353.0,
+      "vs_no_substitution": 0.585,
+      "saved": 3797.0,
+      "pct_of_gmv": 2.576
+    },
+    "0.55": {
+      "revenue_lost": 3947.0,
+      "vs_no_substitution": 0.431,
+      "saved": 5203.0,
+      "pct_of_gmv": 3.529
+    },
+    "0.7": {
+      "revenue_lost": 2704.0,
+      "vs_no_substitution": 0.296,
+      "saved": 6446.0,
+      "pct_of_gmv": 4.373
+    },
+    "0.85": {
+      "revenue_lost": 1429.0,
+      "vs_no_substitution": 0.156,
+      "saved": 7721.0,
+      "pct_of_gmv": 5.238
+    }
+  },
+  "basket_save_assumption": 0.7
+}

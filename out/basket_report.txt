@@ -1,0 +1,182 @@
+37725 orders, 49 products, 3000 users. Train baskets 34725, held-out orders 3000.
+Split is TEMPORAL (each user's last order held out). A random basket
+split would let a user's future train the model that predicts their
+past, which on 72% reorder data is a very effective way to cheat.
+item2vec trained in 236s
+
+==============================================================================
+1. BASKET COMPLETION -- LEAVE-ONE-OUT, SEGMENTED
+==============================================================================
+                    hit_new_to_user  hit_reorder  ndcg_new_to_user  ndcg_reorder  hit_ALL  ndcg_ALL
+method                                                                                             
+popularity                   0.2997       0.3695            0.1569        0.2170   0.3617    0.2103
+cooccurrence_lift            0.5549       0.6249            0.3422        0.4198   0.6170    0.4111
+item2vec                     0.5786       0.6587            0.3698        0.4327   0.6497    0.4256
+item2vec + reorder           0.5697       0.6838            0.3494        0.4683   0.6710    0.4550
+
+Held-out items: 2663 reorder, 337 new-to-user.
+
+WHY THIS TABLE IS SEGMENTED AND THE AGGREGATE IS NOT REPORTED ALONE:
+predicting a REORDER is close to free -- the user buys milk every week,
+and a model that just replays their history scores well. The NEW-TO-USER
+column is the only place discovery happens, and it is where every method
+here is dramatically weaker. An aggregate hit-rate is a weighted average
+of an easy problem and a hard one, dominated by whichever is more
+frequent, and on grocery data that is always the easy one.
+
+Reorder personalisation is the single largest lift on the reorder segment
+and buys little or nothing on new-to-user, which is exactly what it
+should do -- and is the reason to look at the columns separately rather
+than celebrate the aggregate it inflates.
+
+==============================================================================
+2. THE CONFLATION -- WHAT CO-OCCURRENCE DOES TO SUBSTITUTES
+==============================================================================
+                    n  mean_cooccurrence    mean_lift  mean_i2v_complement  mean_i2v_similarity
+relation                                                                                       
+TRUE complements  180          1439.7389       1.6783               0.6897              -0.1876
+TRUE substitutes   26             0.0000       0.0000              -2.3469               0.9176
+unrelated         300           690.6567       0.8771               0.0356               0.0354
+
+READ THE FIRST TWO COLUMNS AGAINST THE LAST ONE.
+
+Co-occurrence and lift are HIGH for complements and LOW for substitutes --
+lower, in fact, than for unrelated pairs. That is not a failure of the
+metric, it is the definition: you buy hot dogs AND buns, you buy cola A
+OR cola B. Substitutes are ANTI-correlated within a basket.
+
+So any method built on same-basket co-occurrence -- lift, association
+rules, a naive item2vec that keeps only one embedding matrix -- ranks
+substitutes as the LEAST related items in the catalogue. A grocery
+substitution engine built that way would offer, for an out-of-stock cola,
+the products that are least like a cola.
+
+The last column is the fix. cos(W_a, W_b) is SECOND-ORDER: it is high when
+two items appear in the same KIND of basket, whether or not they ever
+appear together. Both colas show up with chips and salsa, so their input
+vectors converge even though they never share a basket.
+
+==============================================================================
+3. SUBSTITUTION SCORED ON A LABELLED PAIR SET
+==============================================================================
+Labelled set: 166 pairs (26 substitute / 70 complement / 70 neither).
+
+                                  precision_at_n        auc
+scorer                                                     
+cooccurrence lift (naive)                 0.0000     0.0000
+i2v similarity                            1.0000     1.0000
+same aisle only                           0.4231     0.9022
+COMBINED (sim + aisle - cooccur)          1.0000     1.0000
+
+ANNOTATION GUIDELINE -- the rules the label set was built from, stated so
+a second annotator could reproduce it:
+  SUBSTITUTE  if a shopper who wanted A and could not have it would
+              accept B as serving the same purpose in the same meal.
+              Test: could B occupy A's slot on the shopping list?
+  COMPLEMENT  if A and B are bought to be used TOGETHER. Test: does
+              having A make you more likely to want B?
+  NEITHER     everything else, including same-aisle pairs that are not
+              interchangeable (ketchup and mustard are complements of
+              hot dogs and of each other, not substitutes for each other).
+
+HONESTY ABOUT THIS LABEL SET: in this project the labels come from the
+generator's planted structure rather than from human annotators, so they
+are ground truth for the SIMULATION and not evidence about real shoppers.
+On real Instacart data this set would have to be hand-labelled -- the
+guideline above is what I would hand an annotator -- and the
+reorder-switch signal below would be weak supervision, not truth.
+
+==============================================================================
+4. THE HOT-DOGS-AND-BUNS TABLE
+==============================================================================
+Top-5 'most related' products for a few items, by each method.
+Watch what the naive method offers as a REPLACEMENT.
+
+  cola_a (soft_drinks):
+    co-occurrence lift  -> lemon_lime_b, salsa_a, salsa_b, lemon_lime_a, chips_b
+    i2v similarity      -> cola_c, cola_b, mustard_a, coffee_b, flour_a
+    TRUE substitutes    -> cola_b, cola_c
+
+  hot_dogs_a (meat):
+    co-occurrence lift  -> ketchup_a, mustard_a, ketchup_b, hotdog_buns_a, hotdog_buns_b
+    i2v similarity      -> hot_dogs_b, spaghetti_a, sandwich_bread_b, eggs_a, lemon_lime_a
+    TRUE substitutes    -> hot_dogs_b
+
+  milk_whole_a (dairy):
+    co-occurrence lift  -> coffee_a, cereal_a, coffee_b, cereal_b, eggs_a
+    i2v similarity      -> milk_whole_b, butter_a, ketchup_a, ketchup_b, butter_b
+    TRUE substitutes    -> milk_whole_b
+
+  spaghetti_a (pasta):
+    co-occurrence lift  -> ground_beef_a, pasta_sauce_a, ground_beef_b, pasta_sauce_b, cheese_slices_b
+    i2v similarity      -> spaghetti_b, hot_dogs_a, chicken_breast_a, eggs_a, coffee_b
+    TRUE substitutes    -> spaghetti_b
+
+Across all 26 true substitute pairs, co-occurrence lift fails to place
+the substitute in the top-5 for 26 of them (100%).
+The second-order similarity places it in the top-5 for 26 of 26 (100%).
+
+THE ENFORCEMENT POINT, because a screener will ask where it lives:
+/complete and /substitute use DIFFERENT scores from the same model --
+W.C^T for complements, cos(W,W) for substitutes. Complete-the-basket
+cannot suggest Pepsi for a Coke basket because it never consults the
+similarity matrix, and it additionally masks everything already in the
+cart and everything in the same product FAMILY as a cart item. That
+family mask is the belt-and-braces: one line, and it makes the failure
+mode structurally impossible rather than merely unlikely.
+
+==============================================================================
+5. SERVING LATENCY -- THE SHOPPER IS AT THE SHELF
+==============================================================================
+  /complete     p50   0.163 ms   p95   0.267 ms   p99   0.579 ms
+  /substitute   p50   0.038 ms   p95   0.049 ms   p99   0.091 ms
+
+/substitute is the one with a human waiting: a shopper is standing at the
+shelf, the item is gone, and the app has to answer NOW. So the ranked
+substitute list is PRECOMPUTED per item offline and the online path only
+re-scores 20 candidates against the user's history. The expensive model
+never runs on that path. /complete is allowed to be slower because it
+renders on a cart page, not in a shopper's hand.
+
+Fallback if the model is unavailable: the precomputed list is a static
+artifact, so /substitute degrades to same-family-most-popular, which is
+a worse answer and not a blank screen.
+
+==============================================================================
+6. BASKET-SAVE SIMULATION
+==============================================================================
+Held-out GMV $147416, 1386 out-of-stock events at a 6% OOS rate.
+Revenue lost with NO substitution offered: $9150
+
+            revenue_lost  vs_no_substitution        saved   pct_of_gmv
+acceptance                                                            
+0.40             5353.00                0.59      3797.00         2.58
+0.55             3947.00                0.43      5203.00         3.53
+0.70             2704.00                0.30      6446.00         4.37
+0.85             1429.00                0.16      7721.00         5.24
+
+ATTACKING MY OWN 70% ASSUMPTION, since it is the number the whole table
+hangs on and I made it up:
+
+  1. IT IS NOT ONE NUMBER. Acceptance depends on the category more than
+     on the model. A shopper will take a different brand of tinned
+     tomatoes without noticing and will refuse a different infant
+     formula outright. Reporting a single portfolio-wide rate hides that
+     the categories with the most OOS events may be the ones with the
+     lowest acceptance.
+  2. IT IS NOT EXOGENOUS. Acceptance depends on the quality of the
+     substitute offered, which is the thing being evaluated. Using a
+     fixed rate assumes away the model's own contribution and makes a
+     bad model look identical to a good one.
+  3. THE COUNTERFACTUAL IS WRONG. 'Item removed' is not the true
+     alternative -- a shopper whose item is missing may abandon the
+     order, or shop elsewhere next week. The cost of a bad substitution
+     is a retention effect this simulation cannot see, so these numbers
+     are an UPPER bound on the saving and a LOWER bound on the harm.
+  4. HOW I WOULD ACTUALLY GET IT: it is directly measurable. Shoppers
+     accept or reject substitutions in the app and the outcome is
+     logged. This assumption exists only because this project has no
+     such log; on real data it would be a fitted rate per category, and
+     the sensitivity band above would be a confidence interval.
+
+(241s)
