@@ -1,0 +1,684 @@
+{
+  "sequence": [
+    {
+      "model": "sequence (uses order)",
+      "hit_rate": 0.25083122755685594,
+      "mrr": 0.09318477845542616,
+      "n": 7519
+    },
+    {
+      "model": "bag of items (order destroyed)",
+      "hit_rate": 0.1279425455512701,
+      "mrr": 0.04384358566763133,
+      "n": 7519
+    }
+  ],
+  "cold_start": {
+    "family_centroid": 0.20833333333333334,
+    "text_embedding": 0.13833333333333334,
+    "content_rules": 0.12666666666666665
+  },
+  "family_intervals": [
+    {
+      "family": "yoghurt",
+      "n_items": 2,
+      "mean_interval": 16.853
+    },
+    {
+      "family": "bananas",
+      "n_items": 4,
+      "mean_interval": 17.543
+    },
+    {
+      "family": "eggs",
+      "n_items": 6,
+      "mean_interval": 17.96
+    },
+    {
+      "family": "cheese_slices",
+      "n_items": 6,
+      "mean_interval": 18.111
+    },
+    {
+      "family": "milk_whole",
+      "n_items": 5,
+      "mean_interval": 18.165
+    },
+    {
+      "family": "sandwich_bread",
+      "n_items": 6,
+      "mean_interval": 18.74
+    },
+    {
+      "family": "chips",
+      "n_items": 6,
+      "mean_interval": 18.826
+    },
+    {
+      "family": "lettuce",
+      "n_items": 6,
+      "mean_interval": 19.057
+    },
+    {
+      "family": "chicken_breast",
+      "n_items": 5,
+      "mean_interval": 19.192
+    },
+    {
+      "family": "tomatoes",
+      "n_items": 4,
+      "mean_interval": 19.358
+    },
+    {
+      "family": "ground_beef",
+      "n_items": 5,
+      "mean_interval": 19.5
+    },
+    {
+      "family": "coffee",
+      "n_items": 6,
+      "mean_interval": 19.85
+    },
+    {
+      "family": "cola",
+      "n_items": 3,
+      "mean_interval": 20.099
+    },
+    {
+      "family": "cereal",
+      "n_items": 5,
+      "mean_interval": 20.365
+    },
+    {
+      "family": "butter",
+      "n_items": 3,
+      "mean_interval": 20.632
+    },
+    {
+      "family": "spaghetti",
+      "n_items": 4,
+      "mean_interval": 20.783
+    },
+    {
+      "family": "pasta_sauce",
+      "n_items": 4,
+      "mean_interval": 20.967
+    },
+    {
+      "family": "sparkling_water_x",
+      "n_items": 4,
+      "mean_interval": 21.618
+    },
+    {
+      "family": "sparkling_water_x_x",
+      "n_items": 3,
+      "mean_interval": 22.006
+    },
+    {
+      "family": "hot_dogs",
+      "n_items": 5,
+      "mean_interval": 22.011
+    },
+    {
+      "family": "salsa",
+      "n_items": 5,
+      "mean_interval": 22.034
+    },
+    {
+      "family": "lemon_lime",
+      "n_items": 4,
+      "mean_interval": 22.046
+    },
+    {
+      "family": "hotdog_buns",
+      "n_items": 5,
+      "mean_interval": 22.097
+    },
+    {
+      "family": "mayo",
+      "n_items": 5,
+      "mean_interval": 22.232
+    },
+    {
+      "family": "cat_food",
+      "n_items": 4,
+      "mean_interval": 22.345
+    },
+    {
+      "family": "vinegar_x",
+      "n_items": 2,
+      "mean_interval": 22.435
+    },
+    {
+      "family": "olive_oil_x",
+      "n_items": 3,
+      "mean_interval": 22.452
+    },
+    {
+      "family": "dog_food",
+      "n_items": 2,
+      "mean_interval": 22.482
+    },
+    {
+      "family": "cat_litter",
+      "n_items": 2,
+      "mean_interval": 22.545
+    },
+    {
+      "family": "choc_chips",
+      "n_items": 6,
+      "mean_interval": 22.557
+    },
+    {
+      "family": "flour",
+      "n_items": 4,
+      "mean_interval": 22.564
+    },
+    {
+      "family": "toothpaste_x_x",
+      "n_items": 4,
+      "mean_interval": 22.569
+    },
+    {
+      "family": "soup_x",
+      "n_items": 2,
+      "mean_interval": 22.686
+    },
+    {
+      "family": "sugar",
+      "n_items": 5,
+      "mean_interval": 22.718
+    },
+    {
+      "family": "shampoo_x",
+      "n_items": 2,
+      "mean_interval": 22.797
+    },
+    {
+      "family": "crackers",
+      "n_items": 3,
+      "mean_interval": 22.836
+    },
+    {
+      "family": "sponges_x",
+      "n_items": 4,
+      "mean_interval": 22.838
+    },
+    {
+      "family": "cat_food_x",
+      "n_items": 3,
+      "mean_interval": 22.851
+    },
+    {
+      "family": "juice",
+      "n_items": 3,
+      "mean_interval": 22.888
+    },
+    {
+      "family": "washing_up_liquid_x_x",
+      "n_items": 4,
+      "mean_interval": 22.991
+    },
+    {
+      "family": "ketchup",
+      "n_items": 4,
+      "mean_interval": 22.999
+    },
+    {
+      "family": "vitamins_x",
+      "n_items": 4,
+      "mean_interval": 23.017
+    },
+    {
+      "family": "soap_x",
+      "n_items": 3,
+      "mean_interval": 23.031
+    },
+    {
+      "family": "dog_food_x",
+      "n_items": 3,
+      "mean_interval": 23.041
+    },
+    {
+      "family": "tuna_x",
+      "n_items": 4,
+      "mean_interval": 23.07
+    },
+    {
+      "family": "napkins",
+      "n_items": 2,
+      "mean_interval": 23.15
+    },
+    {
+      "family": "crackers_x",
+      "n_items": 2,
+      "mean_interval": 23.157
+    },
+    {
+      "family": "peanut_butter_x_x",
+      "n_items": 4,
+      "mean_interval": 23.178
+    },
+    {
+      "family": "toothpaste_x",
+      "n_items": 2,
+      "mean_interval": 23.254
+    },
+    {
+      "family": "biscuits",
+      "n_items": 3,
+      "mean_interval": 23.27
+    },
+    {
+      "family": "plasters_x",
+      "n_items": 2,
+      "mean_interval": 23.29
+    },
+    {
+      "family": "honey_x",
+      "n_items": 3,
+      "mean_interval": 23.293
+    },
+    {
+      "family": "cling_film_x",
+      "n_items": 4,
+      "mean_interval": 23.306
+    },
+    {
+      "family": "mustard",
+      "n_items": 3,
+      "mean_interval": 23.312
+    },
+    {
+      "family": "beans",
+      "n_items": 2,
+      "mean_interval": 23.402
+    },
+    {
+      "family": "greeting_card_x_x",
+      "n_items": 2,
+      "mean_interval": 23.48
+    },
+    {
+      "family": "washing_up_liquid_x",
+      "n_items": 3,
+      "mean_interval": 23.54
+    },
+    {
+      "family": "beans_x",
+      "n_items": 3,
+      "mean_interval": 23.549
+    },
+    {
+      "family": "bin_bags_x",
+      "n_items": 4,
+      "mean_interval": 23.593
+    },
+    {
+      "family": "jam_x",
+      "n_items": 2,
+      "mean_interval": 23.685
+    },
+    {
+      "family": "oats",
+      "n_items": 3,
+      "mean_interval": 23.704
+    },
+    {
+      "family": "granola_x",
+      "n_items": 2,
+      "mean_interval": 23.707
+    },
+    {
+      "family": "razors_x",
+      "n_items": 2,
+      "mean_interval": 23.775
+    },
+    {
+      "family": "cream_x_x",
+      "n_items": 2,
+      "mean_interval": 23.784
+    },
+    {
+      "family": "birthday_candles",
+      "n_items": 4,
+      "mean_interval": 23.829
+    },
+    {
+      "family": "greeting_card_x",
+      "n_items": 3,
+      "mean_interval": 23.852
+    },
+    {
+      "family": "rice_x",
+      "n_items": 4,
+      "mean_interval": 23.907
+    },
+    {
+      "family": "oats_x_x",
+      "n_items": 3,
+      "mean_interval": 23.911
+    },
+    {
+      "family": "painkillers_x_x",
+      "n_items": 4,
+      "mean_interval": 23.927
+    },
+    {
+      "family": "tea",
+      "n_items": 2,
+      "mean_interval": 23.97
+    },
+    {
+      "family": "peanut_butter_x",
+      "n_items": 3,
+      "mean_interval": 24.032
+    },
+    {
+      "family": "biscuits_x_x",
+      "n_items": 4,
+      "mean_interval": 24.049
+    },
+    {
+      "family": "granola",
+      "n_items": 2,
+      "mean_interval": 24.089
+    },
+    {
+      "family": "vitamins_x_x",
+      "n_items": 2,
+      "mean_interval": 24.099
+    },
+    {
+      "family": "oats_x",
+      "n_items": 2,
+      "mean_interval": 24.181
+    },
+    {
+      "family": "olive_oil_x_x",
+      "n_items": 4,
+      "mean_interval": 24.211
+    },
+    {
+      "family": "soup_x_x",
+      "n_items": 2,
+      "mean_interval": 24.252
+    },
+    {
+      "family": "dog_food_x_x",
+      "n_items": 4,
+      "mean_interval": 24.323
+    },
+    {
+      "family": "cat_litter_x",
+      "n_items": 2,
+      "mean_interval": 24.346
+    },
+    {
+      "family": "soy_sauce_x_x",
+      "n_items": 3,
+      "mean_interval": 24.349
+    },
+    {
+      "family": "rice",
+      "n_items": 3,
+      "mean_interval": 24.394
+    },
+    {
+      "family": "shampoo_x_x",
+      "n_items": 4,
+      "mean_interval": 24.418
+    },
+    {
+      "family": "cat_litter_x_x",
+      "n_items": 2,
+      "mean_interval": 24.499
+    },
+    {
+      "family": "yoghurt_x_x",
+      "n_items": 4,
+      "mean_interval": 24.544
+    },
+    {
+      "family": "sponges_x_x",
+      "n_items": 3,
+      "mean_interval": 24.593
+    },
+    {
+      "family": "juice_x",
+      "n_items": 4,
+      "mean_interval": 24.625
+    },
+    {
+      "family": "soup",
+      "n_items": 2,
+      "mean_interval": 24.686
+    },
+    {
+      "family": "jam_x_x",
+      "n_items": 4,
+      "mean_interval": 24.7
+    },
+    {
+      "family": "batteries_x_x",
+      "n_items": 2,
+      "mean_interval": 24.851
+    },
+    {
+      "family": "cream_x",
+      "n_items": 4,
+      "mean_interval": 24.871
+    },
+    {
+      "family": "kitchen_roll_x",
+      "n_items": 3,
+      "mean_interval": 24.872
+    },
+    {
+      "family": "tuna",
+      "n_items": 4,
+      "mean_interval": 24.885
+    },
+    {
+      "family": "foil_x",
+      "n_items": 2,
+      "mean_interval": 24.91
+    },
+    {
+      "family": "tea_x",
+      "n_items": 2,
+      "mean_interval": 24.912
+    },
+    {
+      "family": "greeting_card",
+      "n_items": 4,
+      "mean_interval": 25.011
+    },
+    {
+      "family": "painkillers_x",
+      "n_items": 2,
+      "mean_interval": 25.071
+    },
+    {
+      "family": "cream",
+      "n_items": 3,
+      "mean_interval": 25.105
+    },
+    {
+      "family": "napkins_x",
+      "n_items": 3,
+      "mean_interval": 25.148
+    },
+    {
+      "family": "batteries_x",
+      "n_items": 2,
+      "mean_interval": 25.274
+    },
+    {
+      "family": "birthday_candles_x",
+      "n_items": 3,
+      "mean_interval": 25.304
+    },
+    {
+      "family": "sparkling_water",
+      "n_items": 3,
+      "mean_interval": 25.446
+    },
+    {
+      "family": "biscuits_x",
+      "n_items": 2,
+      "mean_interval": 25.62
+    },
+    {
+      "family": "yoghurt_x",
+      "n_items": 2,
+      "mean_interval": 25.625
+    },
+    {
+      "family": "light_bulbs_x",
+      "n_items": 4,
+      "mean_interval": 25.853
+    },
+    {
+      "family": "rice_x_x",
+      "n_items": 4,
+      "mean_interval": 26.139
+    },
+    {
+      "family": "batteries",
+      "n_items": 4,
+      "mean_interval": 26.222
+    },
+    {
+      "family": "vinegar",
+      "n_items": 3,
+      "mean_interval": 26.328
+    },
+    {
+      "family": "peanut_butter",
+      "n_items": 3,
+      "mean_interval": 26.622
+    },
+    {
+      "family": "shampoo",
+      "n_items": 4,
+      "mean_interval": 27.302
+    },
+    {
+      "family": "soy_sauce_x",
+      "n_items": 4,
+      "mean_interval": 27.321
+    },
+    {
+      "family": "honey",
+      "n_items": 3,
+      "mean_interval": 27.728
+    },
+    {
+      "family": "washing_up_liquid",
+      "n_items": 2,
+      "mean_interval": 27.896
+    },
+    {
+      "family": "soap",
+      "n_items": 2,
+      "mean_interval": 27.937
+    },
+    {
+      "family": "bin_bags",
+      "n_items": 2,
+      "mean_interval": 28.331
+    },
+    {
+      "family": "painkillers",
+      "n_items": 3,
+      "mean_interval": 28.336
+    },
+    {
+      "family": "kitchen_roll",
+      "n_items": 2,
+      "mean_interval": 28.594
+    },
+    {
+      "family": "toothpaste",
+      "n_items": 3,
+      "mean_interval": 28.688
+    },
+    {
+      "family": "cling_film",
+      "n_items": 3,
+      "mean_interval": 28.745
+    },
+    {
+      "family": "jam",
+      "n_items": 4,
+      "mean_interval": 28.839
+    },
+    {
+      "family": "foil",
+      "n_items": 4,
+      "mean_interval": 29.1
+    },
+    {
+      "family": "razors",
+      "n_items": 2,
+      "mean_interval": 29.56
+    },
+    {
+      "family": "olive_oil",
+      "n_items": 3,
+      "mean_interval": 29.743
+    },
+    {
+      "family": "sponges",
+      "n_items": 4,
+      "mean_interval": 31.165
+    },
+    {
+      "family": "plasters",
+      "n_items": 2,
+      "mean_interval": 33.299
+    },
+    {
+      "family": "soy_sauce",
+      "n_items": 2,
+      "mean_interval": 33.513
+    },
+    {
+      "family": "light_bulbs",
+      "n_items": 4,
+      "mean_interval": 34.973
+    },
+    {
+      "family": "vitamins",
+      "n_items": 2,
+      "mean_interval": 35.415
+    }
+  ],
+  "switch_matrix": {
+    "base_rate": 0.006443914081145584,
+    "raw": {
+      "p50": 0.0,
+      "p200": 0.0,
+      "p500": 0.002,
+      "p1000": 0.001
+    },
+    "normalised": {
+      "p50": 0.04,
+      "p200": 0.015,
+      "p500": 0.026,
+      "p1000": 0.029
+    },
+    "slot": {
+      "p50": 1.0,
+      "p200": 1.0,
+      "p500": 1.0,
+      "p1000": 1.0
+    }
+  },
+  "directional": {
+    "directional": 0.21505519350977523,
+    "symmetric": 0.22396595291927118,
+    "n": 7519
+  }
+}

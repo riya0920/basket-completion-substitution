@@ -1,0 +1,231 @@
+==============================================================================
+ML-3 COMPLETION PASS -- 420 products, 37595 orders, 30076 train / 7519 test baskets
+==============================================================================
+
+==============================================================================
+1. DOES WITHIN-BASKET ORDER CARRY SIGNAL?
+==============================================================================
+  sequence (uses order)            hit@10 0.2508   MRR 0.0932   n=7519
+  bag of items (order destroyed)   hit@10 0.1279   MRR 0.0438   n=7519
+
+ORDER IS WORTH +0.1229 hit@10 ON NEXT-ITEM PREDICTION.
+
+  The control is the same model trained on SHUFFLED copies of the same
+  baskets. Identical co-occurrence, identical popularity, identical
+  capacity -- the only thing it cannot know is which item came last. Any
+  gap is attributable to order and to nothing else, which is why the
+  control is a shuffle rather than a different model.
+
+  This is also why the generator had to change first. The previous pass
+  could not run this experiment: baskets were emitted in whatever order
+  the generator happened to build them, so there was no order to ignore
+  and 'item2vec ignores sequence' was a statement about the model with no
+  measurable consequence.
+
+  HONEST LIMIT: first-order. The model forgets everything before the last
+  item, so a basket that is obviously a cookout is represented only by
+  whatever went in most recently. That is left visible rather than
+  patched with an average over the basket -- averaging would quietly turn
+  it back into a bag-of-items model and this comparison would stop
+  meaning anything.
+
+==============================================================================
+2. COLD START, SCORED AGAINST THE CEILING IT CANNOT REACH
+==============================================================================
+60 held-out products. Each method places a product the learned model has
+never seen; the score is overlap@10 with what the FULL-HISTORY learned
+vector would have returned.
+
+  family_centroid    overlap@10 0.2083  (sd 0.3093)
+  text_embedding     overlap@10 0.1383  (sd 0.1887)
+  content_rules      overlap@10 0.1267  (sd 0.1849)
+
+BEST FALLBACK: family_centroid at 20.8% of the learned answer.
+
+  The ceiling is the point. Scoring cold-start methods against EACH OTHER
+  answers 'which fallback is least bad'; scoring them against the vector
+  the product would eventually earn answers 'how much of the
+  recommendation quality is missing on day one', which is the number a
+  launch team is actually asking for.
+
+  Cold start is also the only part of a recommender that can be evaluated
+  honestly with no A/B test at all, because the counterfactual is
+  available: hold the product out, then look.
+
+  The family centroid EXCLUDES the held-out product from its own
+  centroid. Leaving it in is the cold-start equivalent of training on the
+  test set and would make the method look excellent for a reason that
+  cannot happen on day one.
+
+  What each method assumes, in increasing order:
+    family centroid  -- somebody assigned the family correctly, which in
+                        a real catalogue is late and often wrong
+    text embedding   -- somebody wrote a description, which is true on
+                        day one because it is what goes on the page
+    content rules    -- the taxonomy, and nothing else
+
+==============================================================================
+3. THE DUE-SCORE WEIGHT IS NOT ONE NUMBER
+==============================================================================
+Fastest and slowest families by observed inter-purchase interval:
+
+        family  n_items  mean_interval
+       yoghurt        2          16.85
+       bananas        4          17.54
+          eggs        6          17.96
+ cheese_slices        6          18.11
+    milk_whole        5          18.16
+sandwich_bread        6          18.74
+         chips        6          18.83
+       lettuce        6          19.06
+          foil        4          29.10
+        razors        2          29.56
+     olive_oil        3          29.74
+       sponges        4          31.16
+      plasters        2          33.30
+     soy_sauce        2          33.51
+   light_bulbs        4          34.97
+      vitamins        2          35.42
+
+The slowest family's interval is 2.10x the fastest (35.4 vs 16.9 days).
+
+  A single global due-weight applies the same urgency curve to milk and
+  to light bulbs. The curve peaks at the EXPECTED interval, so a weight
+  tuned on fast movers fires far too early on slow ones -- and the
+  aggregate hit-rate that tuned it cannot see the difference, because it
+  is dominated by the fast families that generate most of the reorders.
+
+  Note the ceiling on this table: no family's interval can be shorter
+  than the user's own trip cadence, which averages 10 days here. The
+  observed spread is therefore COMPRESSED relative to real consumption --
+  a household that gets through milk in three days still only buys it
+  when they shop. Any per-category dial fitted on observed intervals
+  inherits that compression and will under-differentiate.
+
+  What a per-family dial does NOT fix: the interval is still a
+  per-(user,item) mean shrunk to the item population, so a household
+  that doubled in size last month is modelled with the average of its
+  old and new cadence and is wrong in both directions.
+
+==============================================================================
+4. THE SWITCH MATRIX ON TRIAL, ON ITS OWN
+==============================================================================
+
+  Random-guess precision on this catalogue: 0.0064
+  (567 true substitute pairs out of 87990 possible pairs)
+
+  variant                       pairs       P@50      P@200      P@500     P@1000
+  raw presence counts           83144     0.0000     0.0000     0.0020     0.0010
+  popularity-normalised         83144     0.0400     0.0150     0.0260     0.0290
+  same-family slot switch         538     1.0000     1.0000     1.0000     1.0000
+
+Median rank of a TRUE substitute pair, out of 83144 ranked pairs:
+  raw presence counts           33603
+  popularity-normalised         53072
+  same-family slot switch         268
+
+THE PRESENCE-BASED MATRIX IS UNUSABLE AT THE HEAD, WHICH IS THE ONLY
+PART ANYONE SEES. Its precision@500 is 0.0020 against a random-guess rate
+of 0.0064 -- BELOW CHANCE where it matters. Across the whole ranking its
+true pairs sit at median 33603 of 83144, marginally better than the 41572 a
+coin flip would give, and that is not a signal anyone can act on: no
+product page shows the middle of a ranking.
+
+  Popularity normalisation lifts the very top (precision@50 0.0400, about
+  6x chance) and pushes the median DOWN to 53072. It is a marginal
+  improvement at the head, not a rescue -- and the reason it cannot be a
+  rescue is that the problem was never popularity.
+
+  THE MECHANISM IS THE SAME STRUCTURAL FACT THAT DEFINES A SUBSTITUTE:
+  SUBSTITUTES DO NOT CO-OCCUR. One product per family per basket, so on
+  any given trip the item LEAST likely to be beside A is A's own
+  substitute. 'B was present when A vanished' is therefore
+  systematically rarer for true substitutes than for arbitrary items,
+  and reweighting a signal cannot fix a signal with the wrong sign.
+
+  A heuristic can be defeated by the very property it is trying to
+  detect, and no reweighting fixes that -- the fix has to be a
+  DEFINITION. A switch is not 'A left and B was around'; it is 'A left
+  and B arrived in the same slot': same family, same order, same user.
+
+  Redefined that way, precision@500 goes from 0.0020 to 1.0000.
+
+  THAT 1.0000 IS NOT AS IMPRESSIVE AS IT LOOKS, AND SAYING SO IS THE
+  POINT. The slot definition only ever emits within-family pairs, and in
+  this generator every within-family pair IS a substitute -- so its
+  precision is bounded at 1.0 BY CONSTRUCTION, not by learning. The
+  taxonomy is doing the work.
+
+  What the behaviour adds on top is RECALL and ORDERING: it surfaces 538
+  of the 567 true pairs, which is 94.9%, and ranks them by how often the
+  swap was actually observed rather than by whether it is possible. A
+  merchandiser who wants to know WHICH cola to offer when this cola is
+  out needs the ordering; the taxonomy alone gives them an unordered set.
+
+  The generator cannot test the finer question -- it makes every family
+  member equally substitutable, so there is no ground truth about which
+  swap shoppers prefer. That is a limit of the lab, and it is the one
+  place in this section where the honest answer is 'not measurable here'.
+
+  That version uses the category taxonomy to SCOPE the search, which is
+  information a retailer genuinely has. It is a smaller claim than
+  'discover substitution from scratch' -- knowing two colas are both
+  colas is not knowing which one a shopper will accept instead of the
+  other -- and it is the claim the data supports.
+
+  Of the raw top 500, 4.4% are true COMPLEMENTS; of the slot-switch top
+  500, 0.0%. Complements are the error the presence version is built to
+  make: a user who stops buying hot dogs but keeps buying buns has
+  changed their shopping list, not substituted one thing for another.
+
+  THIS SECTION EXISTS BECAUSE THE PREVIOUS PASS NEVER RAN IT. The switch
+  matrix was computed, z-scored, and added to a combined scorer as one
+  term among several -- where a signal that is BELOW CHANCE on its own
+  is indistinguishable from a signal that is merely small. A component
+  nobody evaluates alone is a component nobody can decide to remove, and
+  this one was actively subtracting.
+
+==============================================================================
+5. DIRECTIONALITY, ACTUALLY SERVED
+==============================================================================
+  directional P(b|a)  hit@10 0.2151
+  symmetrised         hit@10 0.2240
+  delta               -0.0089  (n=7519)
+
+  THE DIRECTIONAL SCORE LOSES AS A BASKET SCORER, and the previous
+  pass's plan -- 'wire the directional lift into /complete' -- would
+  have made the endpoint worse.
+
+  The asymmetry is real; the mistake was assuming a real effect must
+  improve every consumer of it. Summing P(b|a) over the items already
+  in the cart is a mixture of conditionals, and a globally popular b
+  scores well under EVERY conditional. The symmetrised min(P(b|a),
+  P(a|b)) is implicitly a SPECIFICITY filter: it demands that the
+  relationship hold in both directions, which is exactly what a
+  merely-popular item fails.
+
+  So the two objects have different jobs, and the honest conclusion is
+  to serve both:
+    - pairwise widget ('customers who bought X also bought') uses the
+      DIRECTIONAL score, because the question is genuinely directed --
+      buns given hot dogs, not the reverse;
+    - whole-basket completion uses the symmetric score, because
+      summing conditionals rewards popularity and symmetry is the
+      cheapest available correction for it.
+
+  Measuring an improvement and not serving it is a common way a model
+  change fails to reach a customer. Serving a real effect through the
+  wrong consumer is a less common one and it is the failure that
+  actually happened here.
+
+  Largest asymmetries -- P(b|a) vs P(a|b):
+    choc_chips_d           -> butter_c                0.2885 vs 0.1095
+    butter_c               -> choc_chips_d            0.1095 vs 0.2885
+    choc_chips_e           -> butter_c                0.2883 vs 0.1111
+    butter_c               -> choc_chips_e            0.1111 vs 0.2883
+    choc_chips_a           -> butter_c                0.2937 vs 0.1181
+
+  The direction is FREE -- the same co-occurrence counts divided by a
+  different denominator -- so symmetrising it was a modelling choice and
+  not a limitation.
+

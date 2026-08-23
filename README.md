@@ -1,268 +1,244 @@
-# ML-3 — Basket Completion & Substitution Engine
+# ML-3 — Basket Completion & Substitution
 
-**Roughly 50% of the spec.** Complements and substitutes treated as *opposite*
-relations with the conflation measured - plus the four things the first pass
-named as missing: reorder **timing** (the spec's own grill question), directional
-complements, price- and pack-aware substitution, and a cold-start path. No API,
-no cart UI; what remains is named at the bottom.
+**Complete against the spec.** Complements and substitutes separated by the two
+item2vec embedding matrices, a sequential model over add-to-cart order, cold start
+scored against the ceiling it cannot reach, a per-family timing dial, a switch
+heuristic put on trial and found guilty, and a cart service with three endpoints
+that deliberately use three different scores.
+
+The two most useful results in this project are both negative.
 
 ```bash
-python src/generate.py      # ~20s  Instacart-shaped orders, now with order DAYS
-python run_basket.py        # ~6min
-python -m pytest tests -q   # 29 tests, ~75s
+python src/generate.py       # ~30s   420 products, 37,595 orders, add-to-cart order
+python run_basket.py         # ~2min  the original evaluation
+python run_complete.py       # ~7min  the completion pass
+uvicorn serve:app --port 8013   #      the cart UI
+python -m pytest tests -q    # 56 tests
 ```
 
-## The data
+420 products across 13 aisles, 3,000 users, 37,595 orders, 288,020 lines,
+59.6% reorders, 415 days.
 
-Instacart's dataset isn't downloadable offline, so `src/generate.py` reproduces
-the three structural properties that make it good for this problem — **baskets**
-(not sessions), **reorder flags**, **aisle/department taxonomy** — and plants the
-relations the project is about:
+## The catalogue is no longer 49 products
 
-| | |
+The hand-authored theme/family skeleton is kept — it carries the meaning of which
+products substitute and which co-occur — and is extended programmatically with
+more brand variants per family and **filler families that belong to no theme**.
+Filler is not noise: it is the honest majority of a real grocery catalogue, and it
+is what makes retrieval hard, because a model that only ever sees themed items has
+never had to ignore anything.
+
+Two other things the generator now emits, each because a section was unbuildable
+without it:
+
+- **Within-basket order.** The trip starter stays first; everything after it
+  follows an aisle walk with jitter. Without it, "item2vec ignores sequence" was a
+  statement about the model with no measurable consequence.
+- **Per-family consumption cadence.** Milk is weekly, light bulbs are quarterly.
+  Without it every aisle's measured inter-purchase interval came out within 5% of
+  every other, and "the due-score weight should not be one number" was an argument
+  with no evidence behind it.
+
+## Does within-basket order carry signal?
+
+| model | hit@10 | MRR |
+|---|---|---|
+| **sequence (uses order)** | **0.2508** | **0.0932** |
+| bag of items (order destroyed) | 0.1279 | 0.0438 |
+
+**Order is worth +0.1229 hit@10 on next-item prediction** — it roughly doubles it.
+
+The control is the *same model* trained on shuffled copies of the *same* baskets:
+identical co-occurrence, identical popularity, identical capacity. The only thing
+it cannot know is which item came last, so the gap is attributable to order and to
+nothing else. That is why the control is a shuffle rather than a different model —
+a GRU would have changed the model class at the same time and the delta could not
+have been attributed to anything.
+
+**Honest limit: first-order.** The model forgets everything before the last item,
+so a basket that is obviously a cookout is represented only by whatever went in
+most recently. That is left visible rather than patched with an average over the
+basket — averaging would quietly turn it back into a bag-of-items model and this
+comparison would stop meaning anything.
+
+## Cold start, scored against the ceiling it cannot reach
+
+60 held-out products. Each method places a product the learned model has never
+seen; the score is overlap@10 with what the **full-history learned vector** would
+have returned.
+
+| fallback | overlap@10 | assumes |
+|---|---|---|
+| **family centroid** | **0.2083** | somebody assigned the family correctly |
+| text embedding (MiniLM) | 0.1383 | somebody wrote a description |
+| content rules | 0.1267 | the taxonomy, and nothing else |
+
+**The best fallback recovers 21% of the learned answer.** That number is the point
+of the section. Scoring cold-start methods against *each other* answers "which
+fallback is least bad"; scoring them against the vector the product will
+eventually earn answers "how much recommendation quality is missing on day one",
+which is what a launch team is actually asking.
+
+Cold start is also the only part of a recommender that can be evaluated honestly
+with **no A/B test at all**, because the counterfactual is available: hold the
+product out, then look.
+
+The family centroid **excludes the held-out product from its own centroid**.
+Leaving it in is the cold-start equivalent of training on the test set and would
+make the method look excellent for a reason that cannot happen on day one.
+
+## The due-score weight is not one number
+
+Fastest and slowest families by observed inter-purchase interval:
+
+| family | mean interval (days) |
 |---|---|
-| 3,000 users, 37,725 orders, 49 products | mean basket 7.5 |
-| **reorder rate 71.7%** | grocery-realistic |
-| 26 true substitute pairs | same *family*, never share a basket |
-| 180 true complement pairs | cross-family, co-occur via 6 meal themes |
+| cheese_slices | 16.9 |
+| eggs | 17.4 |
+| chips | 18.0 |
+| … | … |
+| soy_sauce | 33.9 |
+| vinegar | 34.6 |
+| plasters | 35.4 |
 
-Split is **temporal** — each user's last order is held out. A random basket split
-would let a user's future train the model that predicts their past, which on
-71%-reorder data is a very effective way to cheat.
+**The slowest family's interval is 2.10× the fastest.** A single global due-weight
+applies the same urgency curve to milk and to light bulbs, and the curve *peaks*
+at the expected interval — so a weight tuned on fast movers fires far too early on
+slow ones. The aggregate hit-rate that tuned it cannot see the difference, because
+it is dominated by the fast families that generate most of the reorders.
 
-## The central idea
+**Note the ceiling on that table**: no family's interval can be shorter than the
+user's own trip cadence, which averages 10 days here. The observed spread is
+therefore *compressed* relative to real consumption — a household that gets
+through milk in three days still only buys it when they shop — so any per-category
+dial fitted on observed intervals inherits that compression and will
+under-differentiate.
 
-item2vec learns **two** matrices, and they carry different information:
+> Reported per **family**, not per aisle. The first version of this table was
+> per-aisle and showed a 1.14× range, which made the argument look unsupported
+> when what was actually unsupported was the choice of grouping — an aisle mixes
+> milk and butter.
 
-```
-W[a] · C[b]      high when a and b appear TOGETHER    → COMPLEMENTS
-cos(W[a], W[b])  high when a and b appear in the SAME KIND of basket,
-                 whether or not they ever appear together → SUBSTITUTES
-```
+## The switch matrix on trial, and found guilty
 
-Most portfolio projects keep only `W`, call cosine similarity "related products",
-and thereby conflate *hot dogs + buns* with *Coke vs Pepsi*. Keeping both
-matrices is what separates them, and gensim hands you the input vectors and drops
-the context vectors — so half the thesis lives in the ones it drops.
+Random-guess precision on this catalogue: **0.0064** (567 true substitute pairs
+out of 87,990 possible).
 
-## The conflation, measured
+| variant | pairs | P@50 | P@500 | P@1000 | median rank of a true pair |
+|---|---|---|---|---|---|
+| raw presence counts | 83,144 | 0.0000 | **0.0020** | 0.0010 | 33,603 / 83,144 |
+| popularity-normalised | 83,144 | 0.0400 | 0.0260 | 0.0290 | 53,072 |
+| **same-family slot switch** | **538** | **1.0000** | 1.0000 | 1.0000 | **268** |
 
-| relation | co-occurrence | lift | W·Cᵀ (1st order) | cos(W,W) (2nd order) |
-|---|---|---|---|---|
-| TRUE complements | 1439.7 | 1.68 | **+0.69** | −0.19 |
-| TRUE substitutes | **0.0** | **0.00** | −2.35 | **+0.92** |
-| unrelated | 690.7 | 0.88 | +0.04 | +0.04 |
+**The presence-based matrix is unusable at the head, which is the only part anyone
+sees.** Its precision@500 is *below* the random-guess rate. Across the whole
+ranking its true pairs sit marginally better than a coin flip — and that is not a
+signal anyone can act on, because no product page shows the middle of a ranking.
 
-Co-occurrence and lift are high for complements and **lower for substitutes than
-for unrelated pairs**. That's not a metric failure, it's the definition: you buy
-hot dogs *and* buns; you buy cola A *or* cola B. Substitutes are
-**anti-correlated within a basket**.
+Popularity normalisation lifts the very top (P@50 ≈ 6× chance) and pushes the
+median *down*. A marginal improvement at the head, not a rescue — and it cannot be
+a rescue because **the problem was never popularity**:
 
-So any method built on same-basket co-occurrence — lift, association rules, a
-one-matrix item2vec — ranks substitutes as the *least* related items in the
-catalogue. Across all 26 true substitute pairs, lift fails to place the
-substitute in the top-5 for **26 of 26 (100%)**. Second-order similarity places
-it in the top-5 for **26 of 26**.
+> **Substitutes do not co-occur.** One product per family per basket, so on any
+> given trip the item *least* likely to be beside A is A's own substitute. "B was
+> present when A vanished" is therefore systematically rarer for true substitutes
+> than for arbitrary items. A heuristic can be defeated by the very property it is
+> trying to detect, and reweighting cannot fix a signal with the wrong sign.
 
-The hot-dogs-and-buns table, straight from the output:
+The fix is a **definition**, not a weighting. A switch is not "A left and B was
+around"; it is "A left and B arrived in the same slot": same family, same order,
+same user.
 
-```
-cola_a (soft_drinks):
-  co-occurrence lift  -> lemon_lime_b, salsa_a, salsa_b, lemon_lime_a, chips_b
-  i2v similarity      -> cola_c, cola_b, mustard_a, coffee_b, flour_a
-  TRUE substitutes    -> cola_b, cola_c
+**And that 1.0000 is not as impressive as it looks, which is the second half of
+the finding.** The slot definition only ever emits within-family pairs, and in this
+generator every within-family pair *is* a substitute — so its precision is bounded
+at 1.0 **by construction**. The taxonomy is doing the work. What the behaviour adds
+on top is **recall and ordering**: it surfaces 538 of the 567 true pairs (94.9%)
+and ranks them by how often the swap was actually observed rather than by whether
+it is possible. A merchandiser who needs to know *which* cola to offer when this
+cola is out needs the ordering; the taxonomy alone gives them an unordered set.
 
-hot_dogs_a (meat):
-  co-occurrence lift  -> ketchup_a, mustard_a, ketchup_b, hotdog_buns_a, hotdog_buns_b
-  i2v similarity      -> hot_dogs_b, spaghetti_a, sandwich_bread_b, eggs_a, ...
-  TRUE substitutes    -> hot_dogs_b
-```
+This section exists because the previous pass never ran it. The switch matrix was
+computed, z-scored, and added to a combined scorer as one term among several —
+where a signal that is below chance on its own is indistinguishable from a signal
+that is merely small. **A component nobody evaluates alone is a component nobody
+can decide to remove**, and this one was actively subtracting.
 
-Asked for a *replacement* for hot dogs, the lift model offers ketchup and buns.
+## Directionality — real, and served through the wrong consumer
 
-**Where the enforcement lives** (a screener will ask): `/complete` and
-`/substitute` use different scores from the same model — `W·Cᵀ` and `cos(W,W)`.
-Complete-the-basket never consults the similarity matrix, and additionally masks
-everything already in the cart *and everything in the same product family as a
-cart item*. That family mask is one line and makes the failure mode structurally
-impossible rather than merely unlikely.
+| scorer | hit@10 |
+|---|---|
+| directional `P(b\|a)` | 0.2151 |
+| symmetrised `min(P(b\|a), P(a\|b))` | **0.2240** |
 
-## Basket completion, segmented
+**The directional score loses as a basket scorer**, so the previous pass's own plan
+— "wire the directional lift into `/complete`" — would have made the endpoint
+worse.
 
-| method | hit@10 new-to-user | hit@10 reorder | hit@10 ALL |
-|---|---|---|---|
-| popularity | 0.300 | 0.370 | 0.362 |
-| co-occurrence lift | 0.555 | 0.625 | 0.617 |
-| item2vec | **0.579** | 0.659 | 0.650 |
-| item2vec + reorder | 0.570 | **0.684** | **0.671** |
+The asymmetry is real. The mistake was assuming a real effect must improve every
+consumer of it. Summing `P(b|a)` over the items already in the cart is a mixture of
+conditionals, and a globally popular *b* scores well under **every** conditional.
+The symmetrised minimum is implicitly a **specificity filter**: it demands the
+relationship hold in both directions, which is exactly what a merely-popular item
+fails.
 
-Held-out items: 2,663 reorder, 337 new-to-user.
+So the two objects have different jobs, and both are served:
 
-Predicting a **reorder** is close to free — the user buys milk every week and
-replaying their history scores well. The **new-to-user** column is the only place
-discovery happens. An aggregate hit-rate is a weighted average of an easy problem
-and a hard one, dominated by whichever is more frequent, and in grocery that's
-always the easy one.
+- the **pairwise widget** ("customers who bought X also bought") uses the
+  directional score, because the question is genuinely directed — buns given hot
+  dogs, not the reverse;
+- **whole-basket completion** uses the symmetric score.
 
-Reorder personalisation is the largest lift on the reorder segment (+0.025) and
-**costs** a little on new-to-user (−0.009) — exactly what it should do, and the
-reason to read the columns separately rather than celebrate the aggregate it
-inflates.
+Measuring an improvement and not serving it is a common way a model change fails
+to reach a customer. Serving a real effect through the *wrong consumer* is a less
+common one, and it is the failure that actually happened here.
 
-## Substitution scored
+## The cart service
 
-166 labelled pairs (26 substitute / 70 complement / 70 neither):
+`uvicorn serve:app --port 8013`
 
-| scorer | precision@n | AUC |
-|---|---|---|
-| co-occurrence lift (naive) | 0.000 | 0.000 |
-| same aisle only | 0.423 | 0.902 |
-| i2v second-order similarity | 1.000 | 1.000 |
-| combined (sim + aisle − co-occur + switch) | 1.000 | 1.000 |
+Three endpoints, three different scores, on purpose:
 
-**Discount the 1.0000.** The generator enforces one-product-per-family-per-basket
-as a hard constraint, so substitutes co-occur exactly zero times and the
-separation is perfect by construction. Real grocery data is softer — households
-stock up on two brands, buy different sizes, or contain people with different
-preferences — so genuine substitutes *do* share baskets sometimes. Read this as:
-the **signal is the right one**, the **effect size is an artifact of the lab**.
+- `POST /complete` — symmetric lift, for the reason above. Reports which scorer it
+  used and whether it fell back, because a cart whose every item is a brand-new
+  SKU has no co-occurrence at all and the page must not silently show taxonomy
+  neighbours as if they were learned recommendations.
+- `GET /next` — the sequence model, keyed on the last item added. States that
+  limitation in its own response.
+- `GET /substitute/{id}` — ranked by **observed switches** within the family, not
+  by embedding similarity. The taxonomy says which products *could* substitute;
+  the switch evidence says which one shoppers actually accept, and only the second
+  is a recommendation. Falls back to price and pack proximity when there is no
+  switch evidence, and says so.
+- `GET /why` — both conditionals for a pair, whether they share a family, and how
+  many switches were observed. A merchandiser asking "why is this suggested" wants
+  the evidence for *this pair*, not a global feature-importance table.
 
-The annotation guideline (what I'd hand a human annotator) is in the report.
-Labels here come from planted structure, not annotators, so they're ground truth
-for the simulation and not evidence about real shoppers.
+## Bugs this pass caught
 
-## Serving and the P&L
+- **The reorder rate collapsed to 0.49** when the catalogue widened from 49 to 420
+  products, because users were touching a new long-tail family every trip and
+  never returning. Real grocery is 60%+ reorders and the reason is *repertoire*:
+  filler draws are now weighted by a per-user Dirichlet as well as by consumption
+  cadence, which brings it to 0.596.
+- **The content-rules fallback could return fewer than k items** for a product
+  whose family and aisle are both small — a blank recommendation slot on a live
+  page. A third tier now fills from the whole catalogue by price and pack
+  proximity: a weak answer, and weaker than an empty one is not.
+- **The per-category timing argument was reported at the wrong grouping** and
+  looked unsupported at 1.14× when the family-level spread is 2.10×.
 
-| endpoint | p50 | p95 |
-|---|---|---|
-| `/complete` | 0.163 ms | 0.267 ms |
-| `/substitute` | **0.038 ms** | **0.049 ms** |
+## What is deliberately not here
 
-`/substitute` is the path with a human waiting — a shopper is at the shelf and
-the item is gone. So the ranked substitute list is **precomputed per item
-offline** and the online path only re-scores 20 candidates against user history.
-The expensive model never runs there. Fallback if the model is unavailable: the
-precomputed list is a static artifact, degrading to same-family-most-popular —
-a worse answer, not a blank screen.
-
-**Basket save** — held-out GMV $147,416, 1,386 OOS events at a 6% rate, $9,150
-lost with no substitution offered:
-
-| acceptance | revenue lost | saved | % of GMV |
-|---|---|---|---|
-| 40% | $5,353 | $3,797 | 2.58% |
-| 55% | $3,947 | $5,203 | 3.53% |
-| **70%** | $2,704 | $6,446 | 4.37% |
-| 85% | $1,429 | $7,721 | 5.24% |
-
-I attack my own 70% assumption in the report: it isn't one number (category
-matters more than the model); it isn't exogenous (acceptance depends on the
-substitute's quality, which is the thing being evaluated, so a fixed rate makes a
-bad model look identical to a good one); the counterfactual is wrong ("item
-removed" ignores abandonment and retention, so these are an **upper** bound on
-saving and a **lower** bound on harm); and it's directly measurable from
-in-app accept/reject logs, which this project doesn't have.
-
-## Second pass: four gaps the first pass named
-
-### Reorder timing - and the aggregate that lies
-
-The spec asks: *"reorder prediction is easy - the user buys milk weekly. Where's
-the modelling value?"* The first pass answered in prose (timing, basket context,
-the discovery margin) and then built a model with **no notion of time**, so it
-could rank *what* a user reorders and had nothing to say about *when*.
-
-The generator now emits order **days** (per-user cadence, 4-16 day mean), and a
-hazard model fits per-(user, item) inter-purchase intervals shrunk toward the
-item population - 53,717 pairs with at least one observed interval.
-
-| method | new-to-user | reorder | ALL |
-|---|---|---|---|
-| item2vec | 0.5931 | 0.6560 | 0.6493 |
-| item2vec + reorder prior | 0.5836 | 0.6873 | 0.6763 |
-| **item2vec + TIMING** | **0.3312** | **0.7387** | 0.6957 |
-
-**The aggregate is up and the product is worse.** Timing gains +0.051 on reorders
-and loses **-0.252** on new-to-user - most of the discovery slot disappearing.
-The model has become a **shopping list**: excellent at telling you you're nearly
-out of milk, useless at telling you anything you didn't already know.
-
-That is the failure this section opens by describing, arrived at from the other
-direction. Nagging isn't caused by surfacing reorders too often; it's caused by
-surfacing them *instead of everything else*.
-
-The weight on the due score is the dial, and it's shown rather than asserted:
-
-| due weight | reorder | new-to-user | ALL |
-|---|---|---|---|
-| 0.0 | 0.6560 | **0.5931** | 0.6493 |
-| 1.0 | 0.7268 | 0.5205 | **0.7050** |
-| 3.0 | 0.7387 | 0.3312 | 0.6957 |
-| 8.0 | 0.6791 | 0.1483 | 0.6230 |
-
-Tuning on the aggregate picks 1.0 and quietly sells the discovery slot to the
-reorder slot. Whether that's the right trade is a **product** decision - reorder
-hits convert better per impression, discovery hits grow basket breadth - and it
-is not a decision an offline hit-rate can make. What the model owes a PM is this
-table, not a single tuned number.
-
-**Why the due score isn't monotone in recency**, which is the part worth arguing
-about: it *peaks* at the expected interval and decays either side. Buying milk two
-days after the last carton is unlikely; buying it twenty days after is *also*
-unlikely, because the user probably bought it elsewhere. A "more time elapsed =
-more likely" recency feature gets that second case exactly backwards - and it's
-the feature most reorder models actually use. A test asserts the non-monotonicity.
-
-### Complements are directional
-
-The first pass symmetrised the complement score and said so in a comment. That's
-wrong in a way that matters commercially: `P(buns | hot dogs)` is high because
-buns are what you need once you have hot dogs, while `P(hot dogs | buns)` is
-lower because buns go with other things.
-
-`directional_lift` computes `P(b | a)` properly. The direction is **free** - the
-same co-occurrence counts divided by a different denominator - so throwing it
-away was a modelling choice, not a limitation. A cart-completion widget should
-suggest b to an a-buyer far more readily than the reverse when the asymmetry is
-large, and a symmetric score cannot express that.
-
-### Price- and pack-aware substitution
-
-Ranking substitutes on embedding similarity alone is the first two things a real
-shopper checks away from being useful: a shopper whose $3 pasta sauce is out does
-not want the $11 one, and someone who wanted a 500g bag does not want the 2kg
-sack. Both are "the same product" to a distributional model.
-
-Penalties are **multiplicative and bounded**, so a close price match can never
-*outrank* a genuinely dissimilar item - it can only reorder items that were
-already close. **Price should break ties among substitutes, not create
-substitutes**, and a test asserts an additive term's failure mode doesn't occur.
-
-### Cold start
-
-A new SKU has no co-occurrence and no useful vector, so the distributional method
-has nothing to say - which is the honest position and the reason a content
-fallback exists: same family first, then same aisle, ranked by price and pack
-proximity. It is strictly worse than the learned answer and it's what you serve
-on day one of a SKU's life. Every recommender needs this path and most portfolio
-projects skip it, because an offline eval never contains an item the model hasn't
-seen.
-
-## The other ~50% - what is still NOT here
-
-- **No API and no cart UI.** The endpoints are Python functions; the spec asks
-  for a demo cart that exercises both.
-- **No sequential model.** item2vec still ignores within-basket order; timing is
-  now modelled but as a per-item hazard, not a sequence.
-- **49 products.** Enough to demonstrate the mechanisms, far too few to say
-  anything about catalogue-scale retrieval or ANN indexing.
-- **Directionality is computed but not wired into `/complete`** - the endpoint
-  still uses the symmetrised score, so the asymmetry is measured and not yet
-  served.
-- **The due-score weight is not fitted per user or per category.** Milk and
-  laundry detergent have very different cadences and the dial is global.
-- **The switch matrix is computed and barely used** - it contributes one
-  z-scored term to the combined scorer and is never validated on its own.
-- **Cold start is content-only** - no vendor metadata, no image or text
-  embedding, no borrowing a vector from the family centroid.
-- **No A/B or interleaving story** for any of it.
+- **No Instacart data.** It is not downloadable here, and the planted ground truth
+  is what lets substitutes and complements be *scored* rather than eyeballed.
+- **The generator makes every family member equally substitutable**, so there is
+  no ground truth about *which* swap a shopper prefers. That is the one place in
+  the switch section where the honest answer is "not measurable here".
+- **The sequence model is first-order.** No session context, no transformer, no
+  attention over the basket.
+- **No A/B or interleaving story** for the recommendations. Cold start is the only
+  part evaluated counterfactually; everything else is offline hit-rate.
+- **The due-score dial is per family**, not per user — a household whose size
+  changed last month is modelled with the average of its old and new cadence and
+  is wrong in both directions.

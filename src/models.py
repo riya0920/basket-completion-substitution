@@ -191,3 +191,89 @@ def personalise(scores: np.ndarray, user_history: dict[int, int],
     for item, n in user_history.items():
         out[item] += weight * (n / total)
     return out
+
+
+def normalised_switch(M: np.ndarray, baskets: list[list[int]],
+                      n_items: int) -> np.ndarray:
+    """Switch counts divided by what popularity alone would predict.
+
+    THE RAW MATRIX IS A POPULARITY RANKING WEARING A SUBSTITUTION HAT.
+    "A disappeared and B was present" fires for every pair where B is simply
+    common, because a common B is present in nearly every basket. Ranked raw, the
+    top thousand pairs of this matrix contain ZERO true substitutes -- it is
+    measuring how often B appears, and B appears a lot.
+
+    Dividing by the expected count under independence (a pointwise-mutual-
+    information shape) removes that. What survives is evidence that B replaced A
+    specifically, rather than evidence that B is popular.
+    """
+    counts = np.zeros(n_items)
+    for b in baskets:
+        for i in b:
+            counts[i] += 1
+    total = counts.sum()
+    if total <= 0:
+        return M.copy()
+    p_item = counts / total
+    row_tot = M.sum(axis=1, keepdims=True)
+    expected = row_tot * p_item[None, :]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.where(expected > 0, M / expected, 0.0)
+    # A single observation over a tiny expectation is an enormous ratio and no
+    # evidence at all, so the score is damped by the raw count it rests on.
+    support = M / (M + 3.0)
+    return np.nan_to_num(out) * support
+
+
+def slot_switch_matrix(user_orders: dict, n_items: int,
+                       family_of: dict) -> np.ndarray:
+    """Switching, redefined: B took the SLOT A vacated, not merely 'B was there'.
+
+    WHY THE PRESENCE-BASED VERSION IS NOT WEAK BUT INVERTED
+    ------------------------------------------------------
+    `switch_matrix` credits every item in the basket when A disappears. Measured
+    against ground truth, its true substitute pairs sit BELOW the median of all
+    pairs -- worse than random -- and the mechanism is the same structural fact
+    that defines a substitute in the first place:
+
+        substitutes do not co-occur.
+
+    One product per family per basket. So on any given trip, the item LEAST
+    likely to be in the basket alongside A is A's own substitute. "B was present
+    when A vanished" is therefore systematically RARER for true substitutes than
+    for arbitrary items, and normalising by popularity does not help because the
+    problem is not popularity -- it is the sign.
+
+    THE FIX IS A DEFINITION, NOT A WEIGHTING
+    ----------------------------------------
+    A switch is not "A left and B was around". It is "A left and B arrived in the
+    same slot": same family, appearing in the order where A stopped, for a user
+    who had been buying A.
+
+    That scopes the search with the CATEGORY taxonomy, which is information a
+    retailer genuinely has -- knowing that two colas are both colas is not the
+    same as knowing which cola a shopper will accept instead of the other, and
+    the second is what is being learned here. It is a smaller claim than
+    "discover substitution from scratch", and it is the one the data supports.
+    """
+    M = np.zeros((n_items, n_items))
+    for _u, orders in user_orders.items():
+        last_seen: dict[int, int] = {}
+        for t, basket in enumerate(orders):
+            bset = set(basket)
+            fam_now = {}
+            for i in bset:
+                fam_now.setdefault(family_of.get(i), []).append(i)
+            for prev_item, last_t in list(last_seen.items()):
+                if prev_item in bset:
+                    last_seen[prev_item] = t
+                    continue
+                if t - last_t != 1:
+                    continue
+                fam = family_of.get(prev_item)
+                for cand in fam_now.get(fam, ()):        # same family only
+                    if cand != prev_item:
+                        M[prev_item, cand] += 1
+            for i in bset:
+                last_seen[i] = t
+    return M
