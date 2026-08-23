@@ -93,13 +93,15 @@ Fastest and slowest families by observed inter-purchase interval:
 
 | family | mean interval (days) |
 |---|---|
-| cheese_slices | 16.9 |
-| eggs | 17.4 |
-| chips | 18.0 |
+| yoghurt | 16.85 |
+| bananas | 17.54 |
+| eggs | 17.96 |
+| milk_whole | 18.16 |
 | … | … |
-| soy_sauce | 33.9 |
-| vinegar | 34.6 |
-| plasters | 35.4 |
+| plasters | 33.30 |
+| soy_sauce | 33.51 |
+| light_bulbs | 34.97 |
+| vitamins | 35.42 |
 
 **The slowest family's interval is 2.10× the fastest.** A single global due-weight
 applies the same urgency curve to milk and to light bulbs, and the curve *peaks*
