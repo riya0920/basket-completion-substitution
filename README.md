@@ -13,7 +13,7 @@ python src/generate.py       # ~30s   420 products, 37,595 orders, add-to-cart o
 python run_basket.py         # ~2min  the original evaluation
 python run_complete.py       # ~7min  the completion pass
 uvicorn serve:app --port 8013   #      the cart UI
-python -m pytest tests -q    # 56 tests
+python -m pytest tests -q    # 66 tests
 ```
 
 420 products across 13 aisles, 3,000 users, 37,595 orders, 288,020 lines,
@@ -230,10 +230,84 @@ Three endpoints, three different scores, on purpose:
 - **The per-category timing argument was reported at the wrong grouping** and
   looked unsupported at 1.14× when the family-level spread is 2.10×.
 
+## Real Instacart — one claim survived and one did not
+
+*"No Instacart data. It is not downloadable here."* **False**, and it took five
+passes to check. The competition download 403s until you accept its rules, but the
+whole dataset is republished as a plain Kaggle **dataset**, and datasets carry no
+rules gate.
+
+```bash
+python run_instacart.py
+```
+
+> **Provenance:** `psparks/instacart-market-basket-analysis`, a third-party
+> republication rather than the official archive, not diffed against it — because
+> the official one is the thing that is gated. 35,767 baskets, 27,440 products,
+> 134 aisles, mean basket 11.0.
+
+### Order carries signal — six times less of it
+
+| model | hit@10 | MRR |
+|---|---|---|
+| sequence (uses order) | **0.0670** | 0.0274 |
+| bag of items (order destroyed) | 0.0474 | 0.0185 |
+
+**Real delta: +0.0196. Generator delta: +0.1229.**
+
+Same control, same model, same metric. The direction holds and the magnitude does
+not. The generator builds baskets by walking an aisle order with a per-family
+cadence, so "what came last" is nearly deterministic in it; **its +0.1229 was an
+upper bound on a real effect rather than an estimate of one.**
+
+### The substitute mechanism is refuted
+
+This project's sharpest finding rested on a mechanism:
+
+> *"Substitutes do not co-occur. One product per family per basket, so on any
+> given trip the item least likely to be beside A is A's own substitute."*
+
+In the generator that is true **by construction**. On real shoppers:
+
+| group | mean lift vs chance | co-occurring |
+|---|---|---|
+| **near-identical variants** | **11.87×** | 33.9% |
+| same aisle, different product | 3.90× | 31.6% |
+| different aisles | 1.34× | 17.2% |
+
+**The more similar two products are, the more they co-occur.** Real shoppers buy
+two yoghurt flavours, two sizes of the same milk, the same crisps in two bags. The
+generator's one-per-family rule isn't a simplification of that behaviour — it's
+the reverse of it. Holds at every similarity threshold tried (0.5–0.7), with
+same-aisle pairs enumerated exhaustively rather than sampled.
+
+**So the generator built in the property it then discovered.** The presence-based
+switch matrix scored below chance here *because* the generator guaranteed
+substitutes never share a basket, and the explanation offered for it is a fact
+about the simulator, not about shopping.
+
+**What this does and does not overturn.** It does not make the slot-switch
+definition wrong — *"A left and B arrived in the same slot"* is still sharper than
+*"B was nearby"*. What it removes is the **reason** given for the presence-based
+matrix failing. On real data a presence-based matrix would rank near-identical
+variants *high*, so it might work rather well — and this project never tested that,
+because its corpus could not.
+
+> **The proxy is doing real work in the argument.** A "variant pair" is two
+> products in one aisle whose names share most of their words. That catches
+> different sizes of the same thing and misses substitutes branded differently.
+> Instacart has no ground-truth substitute set — which is still why the generator
+> exists.
+
 ## What is deliberately not here
 
-- **No Instacart data.** It is not downloadable here, and the planted ground truth
-  is what lets substitutes and complements be *scored* rather than eyeballed.
+- **Instacart is used for two experiments, not as the corpus.** The embeddings,
+  the cold-start ladder, the timing dial and the cart service all still run on the
+  generator; only the order claim and the co-occurrence mechanism were re-tested.
+- **The generator's basket-construction rule is now known to be wrong**, and it
+  has not been changed. One item per family per basket is the reverse of real
+  behaviour, so every result that depends on it — the switch-matrix section most
+  of all — should be read as a statement about this simulator.
 - **The generator makes every family member equally substitutable**, so there is
   no ground truth about *which* swap a shopper prefers. That is the one place in
   the switch section where the honest answer is "not measurable here".

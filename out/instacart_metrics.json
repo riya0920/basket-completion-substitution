@@ -1,0 +1,46 @@
+{
+  "corpus": {
+    "baskets": 35767,
+    "items": 27440,
+    "mean_basket": 11.002991584421395,
+    "median_basket": 9.0,
+    "aisles": 134
+  },
+  "order": {
+    "sequence": {
+      "hit_rate": 0.06695554934302488,
+      "mrr": 0.027424440095672954,
+      "n": 7154
+    },
+    "bag": {
+      "hit_rate": 0.04738607771875874,
+      "mrr": 0.018478451393603754,
+      "n": 7154
+    },
+    "delta": 0.019569471624266137,
+    "generator_delta": 0.1229
+  },
+  "cooccurrence": {
+    "min_baskets": 25,
+    "jaccard": 0.6,
+    "candidates": 2832,
+    "variant": {
+      "n": 1138,
+      "mean_lift": 11.8688299163524,
+      "median_lift": 0.0,
+      "share_cooccurring": 0.3391915641476274
+    },
+    "same_aisle": {
+      "n": 90575,
+      "mean_lift": 3.8978728626815524,
+      "median_lift": 0.0,
+      "share_cooccurring": 0.3157052166712669
+    },
+    "cross_aisle": {
+      "n": 195484,
+      "mean_lift": 1.3374212754161023,
+      "median_lift": 0.0,
+      "share_cooccurring": 0.17233123938532055
+    }
+  }
+}

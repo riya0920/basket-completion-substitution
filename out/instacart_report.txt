@@ -1,0 +1,95 @@
+==============================================================================
+ML-3 INSTACART PASS -- THE GENERATOR, CHECKED AGAINST REAL BASKETS
+==============================================================================
+'No Instacart data. It is not downloadable here.' -- FALSE, and it took
+five passes to check. The competition's download endpoint 403s until
+the rules are accepted, but the whole dataset is republished as a plain
+Kaggle DATASET and datasets carry no rules gate.
+
+PROVENANCE: psparks/instacart-market-basket-analysis, a third-party
+republication rather than the official archive, not diffed against it
+because the official one is the thing that is gated.
+
+  baskets 35767, products 27440, aisles 134, mean basket 11.0
+
+==============================================================================
+A. DOES ADD-TO-CART ORDER CARRY SIGNAL ON REAL BASKETS?
+==============================================================================
+                         model  hit_at_10      mrr
+         sequence (uses order)     0.0670   0.0274
+bag of items (order destroyed)     0.0474   0.0185
+
+  delta hit@10 on real baskets : +0.0196
+  delta on the generator       : +0.1229
+
+  THE DIRECTION HOLDS AND THE MAGNITUDE DOES NOT. Order carries real
+  signal -- the same control, the same model, the same metric -- but
+  6.3x less of it than the generator advertised.
+
+  The generator builds baskets by walking an aisle order with a
+  per-family cadence, so 'what came last' is close to deterministic in
+  it. Real shoppers are messier, and the honest reading is that the
+  generator's +0.1229 was an upper bound on a real effect rather than
+  an estimate of one.
+
+==============================================================================
+B. DO SUBSTITUTES CO-OCCUR? THE MECHANISM, ON REAL SHOPPERS
+==============================================================================
+This project's sharpest finding rested on a mechanism:
+
+  'Substitutes do not co-occur. One product per family per basket, so
+   on any given trip the item LEAST likely to be beside A is A's own
+   substitute.'
+
+In the generator that is true BY CONSTRUCTION -- it places one item per
+family in each basket. Whether real shoppers behave that way is a
+different question, and this is the first chance to ask it.
+
+  jaccard       group      n  mean_lift  share_cooccurring
+    0.500     variant   2657     12.492              0.375
+    0.500  same_aisle  89056      3.743              0.314
+    0.500 cross_aisle 195484      1.337              0.172
+    0.600     variant   1138     11.869              0.339
+    0.600  same_aisle  90575      3.898              0.316
+    0.600 cross_aisle 195484      1.337              0.172
+    0.700     variant    423     10.637              0.322
+    0.700  same_aisle  91290      3.966              0.316
+    0.700 cross_aisle 195484      1.337              0.172
+
+  Lift is observed co-occurrence over what independence predicts, so
+  1.0 is chance. Same-aisle pairs are enumerated exhaustively; the
+  cross-aisle group is sampled because there are four million of them.
+
+  THE MECHANISM IS REFUTED ON REAL DATA, AND NOT NARROWLY.
+
+    near-identical variants :  11.87x chance
+    same aisle, different   :   3.90x
+    different aisles        :   1.34x
+
+  THE MORE SIMILAR TWO PRODUCTS ARE, THE MORE THEY CO-OCCUR. Real
+  shoppers buy two yoghurt flavours, two sizes of the same milk, the
+  same crisps in two bags. The generator's one-per-family rule is not a
+  simplification of that behaviour, it is the reverse of it.
+
+  SO THE GENERATOR BUILT IN THE PROPERTY IT THEN DISCOVERED. The
+  presence-based switch matrix scored below chance in this project
+  BECAUSE the generator guaranteed substitutes never share a basket,
+  and the explanation offered for it -- 'substitutes do not co-occur' --
+  is a fact about the simulator and not about shopping.
+
+  WHAT THIS DOES AND DOES NOT OVERTURN. It does not make the slot-switch
+  definition wrong: 'A left and B arrived in the same slot' is still a
+  sharper definition of a switch than 'B was nearby'. What it removes is
+  the REASON given for the presence-based matrix failing. On real data a
+  presence-based matrix would rank near-identical variants HIGH, so it
+  might work rather well -- and this project never tested that, because
+  its corpus could not.
+
+  THE PROXY, STATED. A variant pair is two products in one aisle whose
+  names share most of their words. That catches different sizes of the
+  same thing and misses substitutes branded differently. The result
+  holds at every threshold tried (0.5-0.7) and the direction is far
+  too large to be a threshold artifact, but the proxy is doing real work
+  in the argument and is not a ground-truth substitute set. Instacart
+  does not have one; that is still why the generator exists.
+
