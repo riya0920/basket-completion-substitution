@@ -1,4 +1,4 @@
-"""Real Instacart baskets — the dataset this project said it could not have.
+"""Real Instacart baskets: the dataset this project said it could not have.
 
 WHAT THIS PROJECT SAID, IN EVERY PASS
 -------------------------------------
